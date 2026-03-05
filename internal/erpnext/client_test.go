@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -108,6 +109,15 @@ func TestCreateAndSubmitStockEntry(t *testing.T) {
 	var submitPayload map[string]interface{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/resource/Stock Entry/") || strings.HasPrefix(r.URL.EscapedPath(), "/api/resource/Stock%20Entry/") {
+			if r.Method != http.MethodGet {
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":{"doctype":"Stock Entry","name":"STE-0001","modified":"2026-03-05 10:00:00.000000"}}`))
+			return
+		}
+
 		switch r.URL.Path {
 		case "/api/resource/Stock Entry":
 			if r.Method != http.MethodPost {

@@ -11,7 +11,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type AuthInfo struct {
@@ -261,15 +260,32 @@ func (c *Client) CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey,
 	}
 
 	submitPayload := map[string]interface{}{
-		"doc": map[string]interface{}{
-			"doctype": "Stock Entry",
-			"name":    createResp.Data.Name,
-		},
+		"doc": map[string]interface{}{},
 	}
 	submitEndpoint := normalized + "/api/method/frappe.client.submit"
-	time.Sleep(1 * time.Second)
-	if err := c.doJSONRequest(ctx, http.MethodPost, submitEndpoint, apiKey, apiSecret, submitPayload, nil); err != nil {
-		return StockEntryResult{}, err
+
+	// Some ERPNext installations reject submit(name-only) with TimestampMismatch.
+	// Fetching the latest full document before submit avoids stale timestamp errors.
+	docEndpoint := normalized + "/api/resource/Stock%20Entry/" + url.PathEscape(createResp.Data.Name)
+	for attempt := 0; attempt < 2; attempt++ {
+		var latest struct {
+			Data map[string]interface{} `json:"data"`
+		}
+		if err := c.doJSON(ctx, docEndpoint, apiKey, apiSecret, &latest); err != nil {
+			return StockEntryResult{}, err
+		}
+		if len(latest.Data) == 0 {
+			return StockEntryResult{}, fmt.Errorf("stock entry %s not found after create", createResp.Data.Name)
+		}
+		submitPayload["doc"] = latest.Data
+
+		if err := c.doJSONRequest(ctx, http.MethodPost, submitEndpoint, apiKey, apiSecret, submitPayload, nil); err != nil {
+			if attempt == 0 && strings.Contains(err.Error(), "TimestampMismatchError") {
+				continue
+			}
+			return StockEntryResult{}, err
+		}
+		break
 	}
 
 	return StockEntryResult{Name: createResp.Data.Name}, nil
