@@ -11,12 +11,31 @@ const (
 	LoginStepAwaitingAPISecret
 )
 
+type ActionStep int
+
+const (
+	ActionStepNone ActionStep = iota
+	ActionStepAwaitingType
+	ActionStepAwaitingItem
+	ActionStepAwaitingQty
+)
+
+type ActionType string
+
+const (
+	ActionTypeReceipt ActionType = "receipt"
+	ActionTypeIssue   ActionType = "issue"
+)
+
 type LoginSession struct {
 	Step             LoginStep
 	BaseURL          string
 	APIKey           string
 	WelcomeMessageID int
 	PromptMessageID  int
+	ActionStep       ActionStep
+	ActionType       ActionType
+	SelectedItemCode string
 }
 
 type SessionManager struct {

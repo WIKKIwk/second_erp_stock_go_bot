@@ -22,11 +22,19 @@ func (f *fakeERP) ValidateCredentials(_ context.Context, _, _, _ string) (erpnex
 	return f.authInfo, nil
 }
 
+func (f *fakeERP) SearchItems(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Item, error) {
+	return nil, nil
+}
+
+func (f *fakeERP) CreateAndSubmitStockEntry(_ context.Context, _, _, _ string, _ erpnext.CreateStockEntryInput) (erpnext.StockEntryResult, error) {
+	return erpnext.StockEntryResult{}, nil
+}
+
 func TestServiceLoginFlowSuccess(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{authInfo: erpnext.AuthInfo{Username: "test@example.com", Roles: []string{"Stock User"}}}
-	svc := NewService(sessions, creds, erp)
+	svc := NewService(sessions, creds, erp, "", "")
 
 	chatID := int64(99)
 
@@ -71,7 +79,7 @@ func TestServiceLoginFlowFailure(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{err: errors.New("401 unauthorized")}
-	svc := NewService(sessions, creds, erp)
+	svc := NewService(sessions, creds, erp, "", "")
 
 	chatID := int64(7)
 	svc.HandleLoginCommand(chatID)
@@ -92,7 +100,7 @@ func TestServiceHandleTextRequiresLogin(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{}
-	svc := NewService(sessions, creds, erp)
+	svc := NewService(sessions, creds, erp, "", "")
 
 	msg := svc.HandleText(context.Background(), 123, "https://erp.example.com")
 	if msg != "Iltimos, avval /login buyrug'ini yuboring." {

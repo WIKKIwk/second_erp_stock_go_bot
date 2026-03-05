@@ -2,6 +2,8 @@ package erpnext
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,5 +77,84 @@ func TestValidateCredentialsInvalidAuth(t *testing.T) {
 	_, err := client.ValidateCredentials(context.Background(), server.URL, "bad", "bad")
 	if err == nil {
 		t.Fatal("expected error for invalid auth")
+	}
+}
+
+func TestSearchItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/resource/Item" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"name":"ITEM-001","item_name":"Rice","stock_uom":"Kg"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	items, err := client.SearchItems(context.Background(), server.URL, "key", "secret", "ri", 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Code != "ITEM-001" || items[0].UOM != "Kg" {
+		t.Fatalf("unexpected item: %+v", items[0])
+	}
+}
+
+func TestCreateAndSubmitStockEntry(t *testing.T) {
+	var createPayload map[string]interface{}
+	var submitPayload map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/resource/Stock Entry":
+			if r.Method != http.MethodPost {
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+				return
+			}
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &createPayload)
+			_, _ = w.Write([]byte(`{"data":{"name":"STE-0001"}}`))
+		case "/api/method/frappe.client.submit":
+			if r.Method != http.MethodPost {
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+				return
+			}
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &submitPayload)
+			_, _ = w.Write([]byte(`{"message":{"name":"STE-0001","docstatus":1}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	result, err := client.CreateAndSubmitStockEntry(
+		context.Background(),
+		server.URL,
+		"key",
+		"secret",
+		CreateStockEntryInput{
+			EntryType:       "Material Receipt",
+			ItemCode:        "ITEM-001",
+			Qty:             5,
+			UOM:             "Kg",
+			TargetWarehouse: "Stores - CH",
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Name != "STE-0001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if createPayload["stock_entry_type"] != "Material Receipt" {
+		t.Fatalf("unexpected create payload: %+v", createPayload)
+	}
+	if submitPayload["doc"] == nil {
+		t.Fatalf("unexpected submit payload: %+v", submitPayload)
 	}
 }

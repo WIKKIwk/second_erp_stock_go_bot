@@ -23,7 +23,13 @@ func main() {
 	erpClient := erpnext.NewClient(httpClient)
 	sessions := bot.NewSessionManager()
 	credStore := store.NewMemoryCredentialStore()
-	service := bot.NewService(sessions, credStore, erpClient)
+	service := bot.NewService(
+		sessions,
+		credStore,
+		erpClient,
+		cfg.DefaultTargetWarehouse,
+		cfg.DefaultSourceWarehouse,
+	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

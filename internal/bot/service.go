@@ -13,16 +13,26 @@ import (
 
 type ERPAuthenticator interface {
 	ValidateCredentials(ctx context.Context, baseURL, apiKey, apiSecret string) (erpnext.AuthInfo, error)
+	SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error)
+	CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateStockEntryInput) (erpnext.StockEntryResult, error)
 }
 
 type Service struct {
-	sessions *SessionManager
-	creds    store.CredentialStore
-	erp      ERPAuthenticator
+	sessions               *SessionManager
+	creds                  store.CredentialStore
+	erp                    ERPAuthenticator
+	defaultTargetWarehouse string
+	defaultSourceWarehouse string
 }
 
-func NewService(sessions *SessionManager, creds store.CredentialStore, erp ERPAuthenticator) *Service {
-	return &Service{sessions: sessions, creds: creds, erp: erp}
+func NewService(sessions *SessionManager, creds store.CredentialStore, erp ERPAuthenticator, defaultTargetWarehouse, defaultSourceWarehouse string) *Service {
+	return &Service{
+		sessions:               sessions,
+		creds:                  creds,
+		erp:                    erp,
+		defaultTargetWarehouse: strings.TrimSpace(defaultTargetWarehouse),
+		defaultSourceWarehouse: strings.TrimSpace(defaultSourceWarehouse),
+	}
 }
 
 func (s *Service) HandleStart(chatID int64) string {
