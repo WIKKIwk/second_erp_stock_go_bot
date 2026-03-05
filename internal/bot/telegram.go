@@ -492,15 +492,15 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		session.Step = LoginStepNone
 		session.PromptMessageID = cb.Message.MessageID
 		session.WelcomeMessageID = 0
-		session.ActionStep = ActionStepAwaitingUOM
+		session.ActionStep = ActionStepAwaitingQty
 		session.ActionType = session.LastActionType
 		session.SelectedItemCode = session.LastItemCode
-		session.SelectedUOM = ""
-		session.RequireUOMFirst = true
+		session.SelectedUOM = session.LastUOM
+		session.RequireUOMFirst = false
 		service.sessions.Upsert(principalID, session)
 
-		text := fmt.Sprintf("Yana rejim.\nMahsulot: %s\nUOM ni tanlang. Quyidagi 'UOM' tugmasini bosing.", session.LastItemCode)
-		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, text, uomPickerKeyboard()); err != nil {
+		text := fmt.Sprintf("Yana rejim.\nMahsulot: %s\nMiqdor kiriting (faqat 0 dan katta son).", session.LastItemCode)
+		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, text, tgbotapi.InlineKeyboardMarkup{}); err != nil {
 			return fmt.Errorf("telegram edit failed: %w", err)
 		}
 		return nil
