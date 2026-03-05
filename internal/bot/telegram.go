@@ -333,7 +333,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		if session.SettingsPanelID > 0 {
 			deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
 		}
-		clearRecentMessagesBestEffort(api, chatID, message.MessageID, 80)
+		clearRecentMessagesAsync(api, chatID, message.MessageID, 40)
 		session.SettingsStep = SettingsStepNone
 		session.SettingsAuthed = false
 		session.SettingsSelect = SettingsSelectionNone
@@ -373,11 +373,11 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 			return nil
 		}
 
-		clearRecentMessagesBestEffort(api, chatID, cb.Message.MessageID, 80)
 		promptID, err := sendTextMessageWithKeyboard(api, chatID, "Harakatni tanlang:", actionTypeKeyboard())
 		if err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
+		clearRecentMessagesAsync(api, chatID, cb.Message.MessageID, 40)
 
 		session.Step = LoginStepNone
 		session.PromptMessageID = promptID
@@ -551,6 +551,10 @@ func clearRecentMessagesBestEffort(api *tgbotapi.BotAPI, chatID int64, fromMessa
 	for id := fromMessageID; id >= minID; id-- {
 		deleteMessageBestEffort(api, chatID, id)
 	}
+}
+
+func clearRecentMessagesAsync(api *tgbotapi.BotAPI, chatID int64, fromMessageID int, window int) {
+	go clearRecentMessagesBestEffort(api, chatID, fromMessageID, window)
 }
 
 func startActionKeyboard() tgbotapi.InlineKeyboardMarkup {
