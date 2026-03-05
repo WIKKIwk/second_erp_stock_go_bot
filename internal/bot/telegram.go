@@ -14,6 +14,7 @@ import (
 
 const (
 	callbackStartAction = "action:start"
+	callbackAgainAction = "action:again"
 	callbackReceipt     = "action:type:receipt"
 	callbackIssue       = "action:type:issue"
 
@@ -392,7 +393,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 	}
 
 	switch cb.Data {
-	case callbackStartAction:
+	case callbackStartAction, callbackAgainAction:
 		if _, ok := service.creds.Get(principalID); !ok {
 			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /login qiling."); err != nil {
 				return fmt.Errorf("telegram send failed: %w", err)
@@ -537,7 +538,7 @@ func buildStockEntryInput(service *Service, session LoginSession, qty float64) (
 }
 
 func sendStartActionPrompt(api *tgbotapi.BotAPI, service *Service, chatID, principalID int64) error {
-	msgID, err := sendTextMessageWithKeyboard(api, chatID, "Harakatni boshlaymizmi?", startActionKeyboard())
+	msgID, err := sendTextMessageWithKeyboard(api, chatID, "Harakatni boshlaymizmi yoki yana?", startActionKeyboard())
 	if err != nil {
 		return fmt.Errorf("telegram send failed: %w", err)
 	}
@@ -587,6 +588,7 @@ func clearRecentMessagesAsync(api *tgbotapi.BotAPI, chatID int64, fromMessageID 
 func startActionKeyboard() tgbotapi.InlineKeyboardMarkup {
 	row := tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("Harakat", callbackStartAction),
+		tgbotapi.NewInlineKeyboardButtonData("Yana", callbackAgainAction),
 	)
 	return tgbotapi.NewInlineKeyboardMarkup(row)
 }
