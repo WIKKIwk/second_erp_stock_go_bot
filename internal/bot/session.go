@@ -17,6 +17,7 @@ const (
 	ActionStepNone ActionStep = iota
 	ActionStepAwaitingType
 	ActionStepAwaitingItem
+	ActionStepAwaitingUOM
 	ActionStepAwaitingQty
 )
 
@@ -51,6 +52,10 @@ type LoginSession struct {
 	ActionStep       ActionStep
 	ActionType       ActionType
 	SelectedItemCode string
+	SelectedUOM      string
+	LastActionType   ActionType
+	LastItemCode     string
+	LastUOM          string
 	SettingsStep     SettingsStep
 	SettingsAuthed   bool
 	SettingsPanelID  int

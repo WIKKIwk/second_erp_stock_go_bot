@@ -111,6 +111,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		session.ActionStep = ActionStepNone
 		session.ActionType = ""
 		session.SelectedItemCode = ""
+		session.SelectedUOM = ""
 		service.sessions.Upsert(principalID, session)
 
 		welcome := "Salom, Admin. Settings panelga xush kelibsiz.\n/wer - default ombor\n/uom - default UOM\n/logout - paneldan chiqish"
@@ -204,10 +205,28 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return nil
 		}
 		session.SelectedItemCode = itemCode
+		session.SelectedUOM = ""
 		session.ActionStep = ActionStepAwaitingQty
 		service.sessions.Upsert(principalID, session)
 		if session.PromptMessageID > 0 {
 			_ = editMessageText(api, chatID, session.PromptMessageID, "Miqdor kiriting (faqat 0 dan katta son).")
+		}
+		return nil
+
+	case ActionStepAwaitingUOM:
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		uom, parsed := parseInlineUOMName(message.Text)
+		if !parsed {
+			if session.PromptMessageID > 0 {
+				_ = editMessageTextWithKeyboard(api, chatID, session.PromptMessageID, "Iltimos, UOM ni inline menyudan tanlang.", uomPickerKeyboard())
+			}
+			return nil
+		}
+		session.SelectedUOM = uom
+		session.ActionStep = ActionStepAwaitingQty
+		service.sessions.Upsert(principalID, session)
+		if session.PromptMessageID > 0 {
+			_ = editMessageText(api, chatID, session.PromptMessageID, fmt.Sprintf("UOM tanlandi: %s\nMiqdor kiriting (faqat 0 dan katta son).", uom))
 		}
 		return nil
 
@@ -246,9 +265,13 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return nil
 		}
 
+		session.LastActionType = session.ActionType
+		session.LastItemCode = session.SelectedItemCode
+		session.LastUOM = input.UOM
 		session.ActionStep = ActionStepNone
 		session.ActionType = ""
 		session.SelectedItemCode = ""
+		session.SelectedUOM = ""
 		service.sessions.Upsert(principalID, session)
 
 		success := fmt.Sprintf("Muvaffaqiyatli. Stock Entry yaratildi va submit qilindi: %s", result.Name)
@@ -306,6 +329,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		session.ActionStep = ActionStepNone
 		session.ActionType = ""
 		session.SelectedItemCode = ""
+		session.SelectedUOM = ""
 		session.PromptMessageID = 0
 		session.WelcomeMessageID = 0
 		service.sessions.Upsert(principalID, session)
@@ -350,6 +374,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		session.ActionStep = ActionStepAwaitingType
 		session.ActionType = ""
 		session.SelectedItemCode = ""
+		session.SelectedUOM = ""
 		service.sessions.Upsert(principalID, session)
 		return nil
 
@@ -393,7 +418,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 	}
 
 	switch cb.Data {
-	case callbackStartAction, callbackAgainAction:
+	case callbackStartAction:
 		if _, ok := service.creds.Get(principalID); !ok {
 			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /login qiling."); err != nil {
 				return fmt.Errorf("telegram send failed: %w", err)
@@ -413,7 +438,46 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		session.ActionStep = ActionStepAwaitingType
 		session.ActionType = ""
 		session.SelectedItemCode = ""
+		session.SelectedUOM = ""
 		service.sessions.Upsert(principalID, session)
+		return nil
+
+	case callbackAgainAction:
+		if _, ok := service.creds.Get(principalID); !ok {
+			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /login qiling."); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
+		if session.LastActionType == "" || strings.TrimSpace(session.LastItemCode) == "" {
+			promptID, err := sendTextMessageWithKeyboard(api, chatID, "Oldingi harakat topilmadi. Avval harakat turini tanlang:", actionTypeKeyboard())
+			if err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			session.Step = LoginStepNone
+			session.PromptMessageID = promptID
+			session.WelcomeMessageID = 0
+			session.ActionStep = ActionStepAwaitingType
+			session.ActionType = ""
+			session.SelectedItemCode = ""
+			session.SelectedUOM = ""
+			service.sessions.Upsert(principalID, session)
+			return nil
+		}
+
+		session.Step = LoginStepNone
+		session.PromptMessageID = cb.Message.MessageID
+		session.WelcomeMessageID = 0
+		session.ActionStep = ActionStepAwaitingUOM
+		session.ActionType = session.LastActionType
+		session.SelectedItemCode = session.LastItemCode
+		session.SelectedUOM = ""
+		service.sessions.Upsert(principalID, session)
+
+		text := fmt.Sprintf("Yana rejim.\nMahsulot: %s\nUOM ni tanlang. Quyidagi 'UOM' tugmasini bosing.", session.LastItemCode)
+		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, text, uomPickerKeyboard()); err != nil {
+			return fmt.Errorf("telegram edit failed: %w", err)
+		}
 		return nil
 
 	case callbackReceipt, callbackIssue:
@@ -428,6 +492,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		}
 		session.ActionStep = ActionStepAwaitingItem
 		session.SelectedItemCode = ""
+		session.SelectedUOM = ""
 		service.sessions.Upsert(principalID, session)
 
 		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, "Mahsulot tanlaymiz. Quyidagi 'Mahsulot' tugmasini bosing.", itemPickerKeyboard()); err != nil {
@@ -469,6 +534,20 @@ func handleInlineQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Servi
 			if item.UOM != "" {
 				article.Description = "UOM: " + item.UOM
 			}
+			results = append(results, article)
+		}
+		return answerInline(api, q.ID, results)
+	}
+
+	if session.ActionStep == ActionStepAwaitingUOM {
+		query := normalizeInlineQuery(q.Query, "uom")
+		uoms, err := service.erp.SearchUOMs(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, query, 20)
+		if err != nil {
+			return fmt.Errorf("uom search failed: %w", err)
+		}
+		results := make([]interface{}, 0, len(uoms))
+		for _, uom := range uoms {
+			article := tgbotapi.NewInlineQueryResultArticle(uom.Name, uom.Name, inlineUOMPrefix+uom.Name)
 			results = append(results, article)
 		}
 		return answerInline(api, q.ID, results)
@@ -516,6 +595,9 @@ func buildStockEntryInput(service *Service, session LoginSession, qty float64) (
 		Qty:      qty,
 		UOM:      defaultUOM,
 	}
+	if strings.TrimSpace(session.SelectedUOM) != "" {
+		input.UOM = strings.TrimSpace(session.SelectedUOM)
+	}
 
 	switch session.ActionType {
 	case ActionTypeReceipt:
@@ -549,6 +631,7 @@ func sendStartActionPrompt(api *tgbotapi.BotAPI, service *Service, chatID, princ
 	session.ActionStep = ActionStepNone
 	session.ActionType = ""
 	session.SelectedItemCode = ""
+	session.SelectedUOM = ""
 	service.sessions.Upsert(principalID, session)
 	return nil
 }
