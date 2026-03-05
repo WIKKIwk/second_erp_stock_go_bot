@@ -1,0 +1,118 @@
+package bot
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"erpnext_stock_telegram/internal/store"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+type telegramCall struct {
+	endpoint string
+	form     map[string]string
+}
+
+func TestHandleCallbackQueryAgainDoesNotSendInvalidInlineKeyboard(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		calls []telegramCall
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		endpoint := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		form := make(map[string]string, len(r.PostForm))
+		for k, v := range r.PostForm {
+			if len(v) > 0 {
+				form[k] = v[0]
+			}
+		}
+
+		mu.Lock()
+		calls = append(calls, telegramCall{endpoint: endpoint, form: form})
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		switch endpoint {
+		case "getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"bot","username":"bot"}}`))
+		case "answerCallbackQuery":
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		case "editMessageText":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":11,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		default:
+			enc := json.NewEncoder(w)
+			_ = enc.Encode(map[string]any{"ok": true, "result": true})
+		}
+	}))
+	defer server.Close()
+
+	api, err := tgbotapi.NewBotAPIWithClient("TEST_TOKEN", server.URL+"/bot%s/%s", server.Client())
+	if err != nil {
+		t.Fatalf("failed to init bot api: %v", err)
+	}
+
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	service := NewService(sessions, creds, &fakeERP{}, "secret", "", "", "Kg")
+
+	principalID := int64(777)
+	creds.Save(principalID, store.Credentials{BaseURL: "https://erp.example.com", APIKey: "k", APISecret: "s"})
+	sessions.Upsert(principalID, LoginSession{
+		LastActionType: ActionTypeReceipt,
+		LastItemCode:   "CHEARS NACHOS",
+		LastUOM:        "Kg",
+	})
+
+	cb := &tgbotapi.CallbackQuery{
+		ID:   "cb1",
+		Data: callbackAgainAction,
+		From: &tgbotapi.User{ID: principalID},
+		Message: &tgbotapi.Message{
+			MessageID: 11,
+			Chat:      &tgbotapi.Chat{ID: 123},
+		},
+	}
+
+	if err := handleCallbackQuery(context.Background(), api, service, cb); err != nil {
+		t.Fatalf("handleCallbackQuery returned error: %v", err)
+	}
+
+	updated, ok := sessions.Get(principalID)
+	if !ok {
+		t.Fatal("expected session to exist")
+	}
+	if updated.ActionStep != ActionStepAwaitingQty {
+		t.Fatalf("expected action step AwaitingQty, got %v", updated.ActionStep)
+	}
+	if updated.SelectedUOM != "Kg" {
+		t.Fatalf("expected SelectedUOM=Kg, got %q", updated.SelectedUOM)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var editFound bool
+	for _, c := range calls {
+		if c.endpoint != "editMessageText" {
+			continue
+		}
+		editFound = true
+		if _, hasReplyMarkup := c.form["reply_markup"]; hasReplyMarkup {
+			t.Fatalf("unexpected reply_markup in editMessageText: %q", c.form["reply_markup"])
+		}
+	}
+	if !editFound {
+		t.Fatal("expected editMessageText call")
+	}
+}
+
