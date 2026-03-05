@@ -271,7 +271,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		result, err := service.erp.CreateAndSubmitStockEntry(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, input)
 		if err != nil {
 			if session.PromptMessageID > 0 {
-				_ = editMessageText(api, chatID, session.PromptMessageID, "Stock Entry yaratishda xatolik: "+err.Error())
+				_ = editMessageText(api, chatID, session.PromptMessageID, userFacingStockError(err))
 			}
 			return nil
 		}
@@ -842,4 +842,24 @@ func parsePositiveQuantity(text string) (float64, error) {
 		return 0, fmt.Errorf("quantity must be greater than 0")
 	}
 	return qty, nil
+}
+
+func userFacingStockError(err error) string {
+	raw := strings.ToLower(err.Error())
+
+	switch {
+	case strings.Contains(raw, "linkvalidationerror"),
+		strings.Contains(raw, "default target warehouse"),
+		strings.Contains(raw, "default source warehouse"),
+		strings.Contains(raw, "target warehouse"),
+		strings.Contains(raw, "source warehouse"),
+		strings.Contains(raw, "could not find"):
+		return "Settingsni to'g'rilang."
+
+	case strings.Contains(raw, "timestampmismatcherror"):
+		return "Server band bo'ldi, qayta urinib ko'ring."
+
+	default:
+		return "Stock Entry yaratilmadi. Settingsni tekshirib qayta urinib ko'ring."
+	}
 }
