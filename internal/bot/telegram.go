@@ -60,14 +60,14 @@ func RunTelegramLoop(ctx context.Context, token string, service *Service) error 
 
 			if update.CallbackQuery != nil {
 				if err := handleCallbackQuery(ctx, api, service, update.CallbackQuery); err != nil {
-					return err
+					log.Printf("callback handling failed: %v", err)
 				}
 				continue
 			}
 
 			if update.InlineQuery != nil {
 				if err := handleInlineQuery(ctx, api, service, update.InlineQuery); err != nil {
-					return err
+					log.Printf("inline query handling failed: %v", err)
 				}
 				continue
 			}
@@ -77,7 +77,7 @@ func RunTelegramLoop(ctx context.Context, token string, service *Service) error 
 			}
 
 			if err := handleIncomingMessage(ctx, api, service, update.Message); err != nil {
-				return err
+				log.Printf("message handling failed: %v", err)
 			}
 		}
 	}
@@ -500,7 +500,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		service.sessions.Upsert(principalID, session)
 
 		text := fmt.Sprintf("Yana rejim.\nMahsulot: %s\nMiqdor kiriting (faqat 0 dan katta son).", session.LastItemCode)
-		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, text, tgbotapi.InlineKeyboardMarkup{}); err != nil {
+		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, text, tgbotapi.NewInlineKeyboardMarkup()); err != nil {
 			return fmt.Errorf("telegram edit failed: %w", err)
 		}
 		return nil
@@ -807,6 +807,9 @@ func deleteMessageBestEffort(api *tgbotapi.BotAPI, chatID int64, messageID int) 
 	}
 	del := tgbotapi.NewDeleteMessage(chatID, messageID)
 	if _, err := api.Request(del); err != nil {
+		if strings.Contains(err.Error(), "message to delete not found") {
+			return
+		}
 		log.Printf("failed to delete message %d in chat %d: %v", messageID, chatID, err)
 	}
 }
