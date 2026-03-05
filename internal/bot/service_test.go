@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"erpnext_stock_telegram/internal/erpnext"
@@ -29,29 +30,29 @@ func TestServiceLoginFlowSuccess(t *testing.T) {
 
 	chatID := int64(99)
 
-	msgs := svc.HandleLoginCommand(chatID)
-	if len(msgs) == 0 {
+	msg := svc.HandleLoginCommand(chatID)
+	if msg == "" {
 		t.Fatal("expected login command response")
 	}
 
-	msgs = svc.HandleText(context.Background(), chatID, "not-url")
-	if msgs[0] == "" || msgs[0][:9] != "Noto'g'ri" {
-		t.Fatalf("expected invalid URL message, got: %v", msgs)
+	msg = svc.HandleText(context.Background(), chatID, "not-url")
+	if !strings.HasPrefix(msg, "Noto'g'ri") {
+		t.Fatalf("expected invalid URL message, got: %q", msg)
 	}
 
-	msgs = svc.HandleText(context.Background(), chatID, "https://erp.example.com/")
-	if len(msgs) != 1 || msgs[0] != "2/3: API Key kiriting." {
-		t.Fatalf("unexpected response after URL: %v", msgs)
+	msg = svc.HandleText(context.Background(), chatID, "https://erp.example.com/")
+	if msg != "2/3: API Key kiriting." {
+		t.Fatalf("unexpected response after URL: %q", msg)
 	}
 
-	msgs = svc.HandleText(context.Background(), chatID, "my-key")
-	if len(msgs) != 1 || msgs[0] != "3/3: API Secret kiriting." {
-		t.Fatalf("unexpected response after API key: %v", msgs)
+	msg = svc.HandleText(context.Background(), chatID, "my-key")
+	if msg != "3/3: API Secret kiriting." {
+		t.Fatalf("unexpected response after API key: %q", msg)
 	}
 
-	msgs = svc.HandleText(context.Background(), chatID, "my-secret")
-	if len(msgs) != 1 || msgs[0] == "" {
-		t.Fatalf("unexpected response after API secret: %v", msgs)
+	msg = svc.HandleText(context.Background(), chatID, "my-secret")
+	if msg == "" {
+		t.Fatalf("unexpected response after API secret: %q", msg)
 	}
 
 	stored, ok := creds.Get(chatID)
@@ -76,12 +77,25 @@ func TestServiceLoginFlowFailure(t *testing.T) {
 	svc.HandleLoginCommand(chatID)
 	svc.HandleText(context.Background(), chatID, "https://erp.example.com")
 	svc.HandleText(context.Background(), chatID, "my-key")
-	msgs := svc.HandleText(context.Background(), chatID, "bad-secret")
+	msg := svc.HandleText(context.Background(), chatID, "bad-secret")
 
-	if len(msgs) < 1 || msgs[0] != "Kirish muvaffaqiyatsiz. URL/API Key/API Secret noto'g'ri bo'lishi mumkin." {
-		t.Fatalf("unexpected failure message: %v", msgs)
+	wantPrefix := "Kirish muvaffaqiyatsiz. URL/API Key/API Secret noto'g'ri bo'lishi mumkin."
+	if len(msg) < len(wantPrefix) || msg[:len(wantPrefix)] != wantPrefix {
+		t.Fatalf("unexpected failure message: %q", msg)
 	}
 	if _, ok := creds.Get(chatID); ok {
 		t.Fatal("credentials must not be saved on failed auth")
+	}
+}
+
+func TestServiceHandleTextRequiresLogin(t *testing.T) {
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	erp := &fakeERP{}
+	svc := NewService(sessions, creds, erp)
+
+	msg := svc.HandleText(context.Background(), 123, "https://erp.example.com")
+	if msg != "Iltimos, avval /login buyrug'ini yuboring." {
+		t.Fatalf("unexpected message: %q", msg)
 	}
 }

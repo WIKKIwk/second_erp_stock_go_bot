@@ -12,9 +12,11 @@ const (
 )
 
 type LoginSession struct {
-	Step    LoginStep
-	BaseURL string
-	APIKey  string
+	Step             LoginStep
+	BaseURL          string
+	APIKey           string
+	WelcomeMessageID int
+	PromptMessageID  int
 }
 
 type SessionManager struct {
@@ -29,7 +31,11 @@ func NewSessionManager() *SessionManager {
 func (m *SessionManager) StartLogin(chatID int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.sessions[chatID] = LoginSession{Step: LoginStepAwaitingURL}
+	existing := m.sessions[chatID]
+	m.sessions[chatID] = LoginSession{
+		Step:             LoginStepAwaitingURL,
+		WelcomeMessageID: existing.WelcomeMessageID,
+	}
 }
 
 func (m *SessionManager) Get(chatID int64) (LoginSession, bool) {

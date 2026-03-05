@@ -25,45 +25,27 @@ func NewService(sessions *SessionManager, creds store.CredentialStore, erp ERPAu
 	return &Service{sessions: sessions, creds: creds, erp: erp}
 }
 
-func (s *Service) HandleStart(chatID int64) []string {
+func (s *Service) HandleStart(chatID int64) string {
 	if creds, ok := s.creds.Get(chatID); ok {
 		rolesText := "aniqlanmadi"
 		if len(creds.Roles) > 0 {
 			rolesText = strings.Join(creds.Roles, ", ")
 		}
-		return []string{
-			fmt.Sprintf("Siz allaqachon tizimga kirgansiz.\nERP foydalanuvchi: %s\nRollar: %s\nQayta login uchun /login buyrug'ini bering.", creds.Username, rolesText),
-		}
+		return fmt.Sprintf("Siz allaqachon tizimga kirgansiz.\nERP foydalanuvchi: %s\nRollar: %s\nQayta login uchun /login buyrug'ini bering.", creds.Username, rolesText)
 	}
 
-	return []string{
-		"Assalomu alaykum. Bu bot ERPNext stock entry jarayonlari uchun ishlatiladi.",
-		"Davom etish uchun /login buyrug'ini yuboring.",
-	}
+	return "Assalomu alaykum. Bu bot ERPNext stock entry jarayonlari uchun ishlatiladi.\nDavom etish uchun /login buyrug'ini yuboring."
 }
 
-func (s *Service) HandleLoginCommand(chatID int64) []string {
+func (s *Service) HandleLoginCommand(chatID int64) string {
 	s.sessions.StartLogin(chatID)
-	return []string{
-		"Login boshlandi.",
-		"1/3: ERPNext URL kiriting. Masalan: https://erp.example.com",
-	}
+	return "Login boshlandi.\n1/3: ERPNext URL kiriting. Masalan: https://erp.example.com"
 }
 
-func (s *Service) HandleText(ctx context.Context, chatID int64, text string) []string {
+func (s *Service) HandleText(ctx context.Context, chatID int64, text string) string {
 	session, ok := s.sessions.Get(chatID)
 	if !ok || session.Step == LoginStepNone {
-		if normalized, err := validateAndNormalizeURL(strings.TrimSpace(text)); err == nil {
-			s.sessions.Upsert(chatID, LoginSession{
-				Step:    LoginStepAwaitingAPIKey,
-				BaseURL: normalized,
-			})
-			return []string{
-				"Login sessiyasi qayta tiklandi.",
-				"2/3: API Key kiriting.",
-			}
-		}
-		return []string{"Iltimos, avval /login buyrug'ini yuboring."}
+		return "Iltimos, avval /login buyrug'ini yuboring."
 	}
 
 	value := strings.TrimSpace(text)
@@ -71,34 +53,31 @@ func (s *Service) HandleText(ctx context.Context, chatID int64, text string) []s
 	case LoginStepAwaitingURL:
 		normalized, err := validateAndNormalizeURL(value)
 		if err != nil {
-			return []string{fmt.Sprintf("Noto'g'ri URL: %v", err), "Qayta kiriting. Masalan: https://erp.example.com"}
+			return fmt.Sprintf("Noto'g'ri URL: %v\nQayta kiriting. Masalan: https://erp.example.com", err)
 		}
 		session.BaseURL = normalized
 		session.Step = LoginStepAwaitingAPIKey
 		s.sessions.Upsert(chatID, session)
-		return []string{"2/3: API Key kiriting."}
+		return "2/3: API Key kiriting."
 
 	case LoginStepAwaitingAPIKey:
 		if value == "" {
-			return []string{"API Key bo'sh bo'lmasligi kerak. Qayta kiriting."}
+			return "API Key bo'sh bo'lmasligi kerak. Qayta kiriting."
 		}
 		session.APIKey = value
 		session.Step = LoginStepAwaitingAPISecret
 		s.sessions.Upsert(chatID, session)
-		return []string{"3/3: API Secret kiriting."}
+		return "3/3: API Secret kiriting."
 
 	case LoginStepAwaitingAPISecret:
 		if value == "" {
-			return []string{"API Secret bo'sh bo'lmasligi kerak. Qayta kiriting."}
+			return "API Secret bo'sh bo'lmasligi kerak. Qayta kiriting."
 		}
 
 		authInfo, err := s.erp.ValidateCredentials(ctx, session.BaseURL, session.APIKey, value)
 		if err != nil {
-			return []string{
-				"Kirish muvaffaqiyatsiz. URL/API Key/API Secret noto'g'ri bo'lishi mumkin.",
-				fmt.Sprintf("Texnik sabab: %v", err),
-				"Qayta urinish uchun /login buyrug'ini yuboring.",
-			}
+			s.sessions.Clear(chatID)
+			return fmt.Sprintf("Kirish muvaffaqiyatsiz. URL/API Key/API Secret noto'g'ri bo'lishi mumkin.\nTexnik sabab: %v\nQayta urinish uchun /login buyrug'ini yuboring.", err)
 		}
 
 		s.creds.Save(chatID, store.Credentials{
@@ -116,9 +95,9 @@ func (s *Service) HandleText(ctx context.Context, chatID int64, text string) []s
 			rolesText = strings.Join(authInfo.Roles, ", ")
 		}
 
-		return []string{fmt.Sprintf("Kirish muvaffaqiyatli.\nERP foydalanuvchi: %s\nRollar: %s", authInfo.Username, rolesText)}
+		return fmt.Sprintf("Kirish muvaffaqiyatli.\nERP foydalanuvchi: %s\nRollar: %s", authInfo.Username, rolesText)
 	default:
-		return []string{"Noma'lum holat. Qayta boshlash uchun /login yuboring."}
+		return "Noma'lum holat. Qayta boshlash uchun /login yuboring."
 	}
 }
 

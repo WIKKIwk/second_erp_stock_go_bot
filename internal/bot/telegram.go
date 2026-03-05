@@ -49,37 +49,133 @@ func RunTelegramLoop(ctx context.Context, token string, service *Service) error 
 				continue
 			}
 
-			chatID := update.Message.Chat.ID
-			principalID := chatID
-			if update.Message.From != nil {
-				principalID = update.Message.From.ID
-			}
-
-			messages := handleIncomingMessage(ctx, service, principalID, update.Message)
-			for _, text := range messages {
-				if strings.TrimSpace(text) == "" {
-					continue
-				}
-				msg := tgbotapi.NewMessage(chatID, text)
-				if _, err := api.Send(msg); err != nil {
-					return fmt.Errorf("telegram send failed: %w", err)
-				}
+			if err := handleIncomingMessage(ctx, api, service, update.Message); err != nil {
+				return err
 			}
 		}
 	}
 }
 
-func handleIncomingMessage(ctx context.Context, service *Service, principalID int64, message *tgbotapi.Message) []string {
+func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *Service, message *tgbotapi.Message) error {
+	chatID := message.Chat.ID
+	principalID := chatID
+	if message.From != nil {
+		principalID = message.From.ID
+	}
+
 	if message.IsCommand() {
 		switch message.Command() {
 		case "start":
-			return service.HandleStart(principalID)
+			deleteMessageBestEffort(api, chatID, message.MessageID)
+			resetSessionMessages(api, service, chatID, principalID)
+
+			text := service.HandleStart(principalID)
+			welcomeID, err := sendTextMessage(api, chatID, text)
+			if err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+
+			service.sessions.Upsert(principalID, LoginSession{
+				Step:             LoginStepNone,
+				WelcomeMessageID: welcomeID,
+			})
+			return nil
+
 		case "login":
-			return service.HandleLoginCommand(principalID)
+			deleteMessageBestEffort(api, chatID, message.MessageID)
+			resetSessionMessages(api, service, chatID, principalID)
+
+			text := service.HandleLoginCommand(principalID)
+			promptID, err := sendTextMessage(api, chatID, text)
+			if err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+
+			session, _ := service.sessions.Get(principalID)
+			session.WelcomeMessageID = 0
+			session.PromptMessageID = promptID
+			service.sessions.Upsert(principalID, session)
+			return nil
+
 		default:
-			return []string{"Noma'lum buyruq. Mavjud buyruqlar: /start, /login"}
+			deleteMessageBestEffort(api, chatID, message.MessageID)
+			if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login"); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
 		}
 	}
 
-	return service.HandleText(ctx, principalID, message.Text)
+	session, ok := service.sessions.Get(principalID)
+	inLoginFlow := ok && session.Step != LoginStepNone
+	responseText := service.HandleText(ctx, principalID, message.Text)
+
+	if inLoginFlow {
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if strings.TrimSpace(responseText) == "" {
+			return nil
+		}
+
+		if session.PromptMessageID > 0 {
+			if err := editMessageText(api, chatID, session.PromptMessageID, responseText); err == nil {
+				return nil
+			}
+			log.Printf("prompt edit failed for user %d, sending fallback message", principalID)
+		}
+
+		newPromptID, err := sendTextMessage(api, chatID, responseText)
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+
+		if updated, exists := service.sessions.Get(principalID); exists && updated.Step != LoginStepNone {
+			updated.PromptMessageID = newPromptID
+			service.sessions.Upsert(principalID, updated)
+		}
+		return nil
+	}
+
+	if strings.TrimSpace(responseText) == "" {
+		return nil
+	}
+	if _, err := sendTextMessage(api, chatID, responseText); err != nil {
+		return fmt.Errorf("telegram send failed: %w", err)
+	}
+	return nil
+}
+
+func resetSessionMessages(api *tgbotapi.BotAPI, service *Service, chatID, principalID int64) {
+	session, ok := service.sessions.Get(principalID)
+	if !ok {
+		return
+	}
+
+	deleteMessageBestEffort(api, chatID, session.WelcomeMessageID)
+	deleteMessageBestEffort(api, chatID, session.PromptMessageID)
+	service.sessions.Clear(principalID)
+}
+
+func sendTextMessage(api *tgbotapi.BotAPI, chatID int64, text string) (int, error) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	sent, err := api.Send(msg)
+	if err != nil {
+		return 0, err
+	}
+	return sent.MessageID, nil
+}
+
+func editMessageText(api *tgbotapi.BotAPI, chatID int64, messageID int, text string) error {
+	edit := tgbotapi.NewEditMessageText(chatID, messageID, text)
+	_, err := api.Send(edit)
+	return err
+}
+
+func deleteMessageBestEffort(api *tgbotapi.BotAPI, chatID int64, messageID int) {
+	if messageID <= 0 {
+		return
+	}
+	del := tgbotapi.NewDeleteMessage(chatID, messageID)
+	if _, err := api.Request(del); err != nil {
+		log.Printf("failed to delete message %d in chat %d: %v", messageID, chatID, err)
+	}
 }
