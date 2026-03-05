@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type AuthInfo struct {
@@ -281,6 +282,7 @@ func (c *Client) CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey,
 		},
 	}
 	submitEndpoint := normalized + "/api/method/frappe.client.submit"
+	time.Sleep(1 * time.Second)
 	if err := c.doJSONRequest(ctx, http.MethodPost, submitEndpoint, apiKey, apiSecret, submitPayload, nil); err != nil {
 		return StockEntryResult{}, err
 	}
