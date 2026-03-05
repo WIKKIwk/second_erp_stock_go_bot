@@ -363,6 +363,9 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		session.SettingsSelect = SettingsSelectionNone
 		session.SettingsPanelID = 0
 		service.sessions.Upsert(principalID, session)
+		if _, err := sendTextMessage(api, chatID, "Siz settings dan chiqdingiz."); err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
 		return nil
 
 	default:
