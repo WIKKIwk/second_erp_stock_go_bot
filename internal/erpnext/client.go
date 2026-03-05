@@ -24,6 +24,14 @@ type Item struct {
 	UOM  string
 }
 
+type Warehouse struct {
+	Name string
+}
+
+type UOM struct {
+	Name string
+}
+
 type CreateStockEntryInput struct {
 	EntryType       string
 	ItemCode        string
@@ -117,6 +125,92 @@ func (c *Client) SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, qu
 		})
 	}
 	return items, nil
+}
+
+func (c *Client) SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]Warehouse, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+
+	filtersJSON, _ := json.Marshal([][]interface{}{
+		{"disabled", "=", 0},
+	})
+
+	params := url.Values{}
+	params.Set("fields", `["name"]`)
+	params.Set("filters", string(filtersJSON))
+	params.Set("limit_page_length", strconv.Itoa(limit))
+
+	if trimmed := strings.TrimSpace(query); trimmed != "" {
+		like := "%" + strings.ReplaceAll(trimmed, "\"", "") + "%"
+		orFiltersJSON, _ := json.Marshal([][]interface{}{
+			{"name", "like", like},
+			{"warehouse_name", "like", like},
+		})
+		params.Set("or_filters", string(orFiltersJSON))
+	}
+
+	endpoint := normalized + "/api/resource/Warehouse?" + params.Encode()
+	var payload struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+		return nil, err
+	}
+
+	warehouses := make([]Warehouse, 0, len(payload.Data))
+	for _, row := range payload.Data {
+		if row.Name != "" {
+			warehouses = append(warehouses, Warehouse{Name: row.Name})
+		}
+	}
+	return warehouses, nil
+}
+
+func (c *Client) SearchUOMs(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]UOM, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+
+	params := url.Values{}
+	params.Set("fields", `["name"]`)
+	params.Set("limit_page_length", strconv.Itoa(limit))
+
+	if trimmed := strings.TrimSpace(query); trimmed != "" {
+		like := "%" + strings.ReplaceAll(trimmed, "\"", "") + "%"
+		filtersJSON, _ := json.Marshal([][]interface{}{
+			{"name", "like", like},
+		})
+		params.Set("filters", string(filtersJSON))
+	}
+
+	endpoint := normalized + "/api/resource/UOM?" + params.Encode()
+	var payload struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+		return nil, err
+	}
+
+	uoms := make([]UOM, 0, len(payload.Data))
+	for _, row := range payload.Data {
+		if row.Name != "" {
+			uoms = append(uoms, UOM{Name: row.Name})
+		}
+	}
+	return uoms, nil
 }
 
 func (c *Client) CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input CreateStockEntryInput) (StockEntryResult, error) {

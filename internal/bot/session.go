@@ -27,6 +27,21 @@ const (
 	ActionTypeIssue   ActionType = "issue"
 )
 
+type SettingsStep int
+
+const (
+	SettingsStepNone SettingsStep = iota
+	SettingsStepAwaitingPassword
+)
+
+type SettingsSelectionType string
+
+const (
+	SettingsSelectionNone      SettingsSelectionType = ""
+	SettingsSelectionWarehouse SettingsSelectionType = "wer"
+	SettingsSelectionUOM       SettingsSelectionType = "uom"
+)
+
 type LoginSession struct {
 	Step             LoginStep
 	BaseURL          string
@@ -36,6 +51,10 @@ type LoginSession struct {
 	ActionStep       ActionStep
 	ActionType       ActionType
 	SelectedItemCode string
+	SettingsStep     SettingsStep
+	SettingsAuthed   bool
+	SettingsPanelID  int
+	SettingsSelect   SettingsSelectionType
 }
 
 type SessionManager struct {

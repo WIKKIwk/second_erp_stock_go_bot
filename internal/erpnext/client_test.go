@@ -158,3 +158,35 @@ func TestCreateAndSubmitStockEntry(t *testing.T) {
 		t.Fatalf("unexpected submit payload: %+v", submitPayload)
 	}
 }
+
+func TestSearchWarehousesAndUOMs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/resource/Warehouse":
+			_, _ = w.Write([]byte(`{"data":[{"name":"Stores - CH"}]}`))
+		case "/api/resource/UOM":
+			_, _ = w.Write([]byte(`{"data":[{"name":"Kg"},{"name":"Nos"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+
+	warehouses, err := client.SearchWarehouses(context.Background(), server.URL, "key", "secret", "store", 10)
+	if err != nil {
+		t.Fatalf("unexpected warehouse error: %v", err)
+	}
+	if len(warehouses) != 1 || warehouses[0].Name != "Stores - CH" {
+		t.Fatalf("unexpected warehouses: %+v", warehouses)
+	}
+
+	uoms, err := client.SearchUOMs(context.Background(), server.URL, "key", "secret", "k", 10)
+	if err != nil {
+		t.Fatalf("unexpected uom error: %v", err)
+	}
+	if len(uoms) != 2 || uoms[0].Name == "" {
+		t.Fatalf("unexpected uoms: %+v", uoms)
+	}
+}

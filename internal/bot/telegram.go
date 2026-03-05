@@ -16,7 +16,10 @@ const (
 	callbackStartAction = "action:start"
 	callbackReceipt     = "action:type:receipt"
 	callbackIssue       = "action:type:issue"
-	inlineItemPrefix    = "item::"
+
+	inlineItemPrefix      = "item::"
+	inlineWarehousePrefix = "wer::"
+	inlineUOMPrefix       = "uom::"
 )
 
 func RunTelegramLoop(ctx context.Context, token string, service *Service) error {
@@ -86,54 +89,58 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		principalID = message.From.ID
 	}
 
+	session, ok := service.sessions.Get(principalID)
+	if !ok {
+		session = LoginSession{}
+	}
+
 	if message.IsCommand() {
-		switch message.Command() {
-		case "start":
-			deleteMessageBestEffort(api, chatID, message.MessageID)
-			resetSessionMessages(api, service, chatID, principalID)
+		return handleCommand(ctx, api, service, message, principalID, chatID, session)
+	}
 
-			text := service.HandleStart(principalID)
-			welcomeID, err := sendTextMessage(api, chatID, text)
-			if err != nil {
-				return fmt.Errorf("telegram send failed: %w", err)
+	if session.SettingsStep == SettingsStepAwaitingPassword {
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if !service.IsSettingsPasswordValid(message.Text) {
+			return ensurePanelText(api, chatID, &session, service, principalID, "Parol noto'g'ri. Qayta kiriting:", tgbotapi.InlineKeyboardMarkup{})
+		}
+
+		session.SettingsStep = SettingsStepNone
+		session.SettingsAuthed = true
+		session.SettingsSelect = SettingsSelectionNone
+		session.ActionStep = ActionStepNone
+		session.ActionType = ""
+		session.SelectedItemCode = ""
+		service.sessions.Upsert(principalID, session)
+
+		welcome := "Salom, Admin. Settings panelga xush kelibsiz.\n/wer - default ombor\n/uom - default UOM\n/logout - paneldan chiqish"
+		return ensurePanelText(api, chatID, &session, service, principalID, welcome, tgbotapi.InlineKeyboardMarkup{})
+	}
+
+	if session.SettingsAuthed && session.SettingsSelect != SettingsSelectionNone {
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		switch session.SettingsSelect {
+		case SettingsSelectionWarehouse:
+			warehouse, parsed := parseInlineWarehouseName(message.Text)
+			if !parsed {
+				return ensurePanelText(api, chatID, &session, service, principalID, "Iltimos, omborni inline menyudan tanlang.", warehousePickerKeyboard())
 			}
-
-			service.sessions.Upsert(principalID, LoginSession{
-				Step:             LoginStepNone,
-				WelcomeMessageID: welcomeID,
-			})
-			return nil
-
-		case "login":
-			deleteMessageBestEffort(api, chatID, message.MessageID)
-			resetSessionMessages(api, service, chatID, principalID)
-
-			text := service.HandleLoginCommand(principalID)
-			promptID, err := sendTextMessage(api, chatID, text)
-			if err != nil {
-				return fmt.Errorf("telegram send failed: %w", err)
-			}
-
-			session, _ := service.sessions.Get(principalID)
-			session.WelcomeMessageID = 0
-			session.PromptMessageID = promptID
-			session.ActionStep = ActionStepNone
-			session.ActionType = ""
-			session.SelectedItemCode = ""
+			service.SetDefaultWarehouse(warehouse)
+			session.SettingsSelect = SettingsSelectionNone
 			service.sessions.Upsert(principalID, session)
-			return nil
-
-		default:
-			deleteMessageBestEffort(api, chatID, message.MessageID)
-			if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login"); err != nil {
-				return fmt.Errorf("telegram send failed: %w", err)
+			return ensurePanelText(api, chatID, &session, service, principalID, "Tanlandi: "+warehouse+"\n/wer /uom /logout", tgbotapi.InlineKeyboardMarkup{})
+		case SettingsSelectionUOM:
+			uom, parsed := parseInlineUOMName(message.Text)
+			if !parsed {
+				return ensurePanelText(api, chatID, &session, service, principalID, "Iltimos, UOM ni inline menyudan tanlang.", uomPickerKeyboard())
 			}
-			return nil
+			service.SetDefaultUOM(uom)
+			session.SettingsSelect = SettingsSelectionNone
+			service.sessions.Upsert(principalID, session)
+			return ensurePanelText(api, chatID, &session, service, principalID, "Tanlandi: "+uom+"\n/wer /uom /logout", tgbotapi.InlineKeyboardMarkup{})
 		}
 	}
 
-	session, ok := service.sessions.Get(principalID)
-	inLoginFlow := ok && session.Step != LoginStepNone
+	inLoginFlow := session.Step != LoginStepNone
 	if inLoginFlow {
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		responseText := service.HandleText(ctx, principalID, message.Text)
@@ -170,7 +177,11 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		return nil
 	}
 
-	if !ok || session.ActionStep == ActionStepNone {
+	if session.ActionStep == ActionStepNone {
+		if session.SettingsAuthed {
+			deleteMessageBestEffort(api, chatID, message.MessageID)
+			return nil
+		}
 		responseText := service.HandleText(ctx, principalID, message.Text)
 		if strings.TrimSpace(responseText) == "" {
 			return nil
@@ -184,8 +195,8 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 	switch session.ActionStep {
 	case ActionStepAwaitingItem:
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		itemCode, ok := parseInlineItemCode(message.Text)
-		if !ok {
+		itemCode, parsed := parseInlineItemCode(message.Text)
+		if !parsed {
 			if session.PromptMessageID > 0 {
 				_ = editMessageText(api, chatID, session.PromptMessageID, "Iltimos, mahsulotni faqat 'Mahsulot' tugmasi orqali tanlang.")
 			}
@@ -209,8 +220,8 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return nil
 		}
 
-		creds, ok := service.creds.Get(principalID)
-		if !ok {
+		creds, found := service.creds.Get(principalID)
+		if !found {
 			if session.PromptMessageID > 0 {
 				_ = editMessageText(api, chatID, session.PromptMessageID, "Sessiya topilmadi. Iltimos, qayta /login qiling.")
 			}
@@ -250,6 +261,93 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 	}
 
 	return nil
+}
+
+func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, message *tgbotapi.Message, principalID, chatID int64, session LoginSession) error {
+	_ = ctx
+	switch message.Command() {
+	case "start":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		resetSessionMessages(api, service, chatID, principalID)
+
+		text := service.HandleStart(principalID)
+		welcomeID, err := sendTextMessage(api, chatID, text)
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+
+		service.sessions.Upsert(principalID, LoginSession{Step: LoginStepNone, WelcomeMessageID: welcomeID})
+		return nil
+
+	case "login":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		resetSessionMessages(api, service, chatID, principalID)
+
+		text := service.HandleLoginCommand(principalID)
+		promptID, err := sendTextMessage(api, chatID, text)
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+
+		session = LoginSession{}
+		session.PromptMessageID = promptID
+		session.Step = LoginStepAwaitingURL
+		service.sessions.Upsert(principalID, session)
+		return nil
+
+	case "settings":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
+		session.SettingsPanelID = 0
+		session.SettingsStep = SettingsStepAwaitingPassword
+		session.SettingsAuthed = false
+		session.SettingsSelect = SettingsSelectionNone
+		session.ActionStep = ActionStepNone
+		session.ActionType = ""
+		session.SelectedItemCode = ""
+		session.PromptMessageID = 0
+		session.WelcomeMessageID = 0
+		service.sessions.Upsert(principalID, session)
+		return ensurePanelText(api, chatID, &session, service, principalID, "Settings parolini kiriting:", tgbotapi.InlineKeyboardMarkup{})
+
+	case "wer":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if !session.SettingsAuthed {
+			return ensurePanelText(api, chatID, &session, service, principalID, "Iltimos, avval /settings ga kirib parolni kiriting.", tgbotapi.InlineKeyboardMarkup{})
+		}
+		session.SettingsSelect = SettingsSelectionWarehouse
+		service.sessions.Upsert(principalID, session)
+		return ensurePanelText(api, chatID, &session, service, principalID, "Ombor tanlang. Quyidagi 'Ombor' tugmasini bosing.", warehousePickerKeyboard())
+
+	case "uom":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if !session.SettingsAuthed {
+			return ensurePanelText(api, chatID, &session, service, principalID, "Iltimos, avval /settings ga kirib parolni kiriting.", tgbotapi.InlineKeyboardMarkup{})
+		}
+		session.SettingsSelect = SettingsSelectionUOM
+		service.sessions.Upsert(principalID, session)
+		return ensurePanelText(api, chatID, &session, service, principalID, "Default UOM tanlang. Quyidagi 'UOM' tugmasini bosing.", uomPickerKeyboard())
+
+	case "logout":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if session.SettingsPanelID > 0 {
+			deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
+		}
+		clearRecentMessagesBestEffort(api, chatID, message.MessageID, 80)
+		session.SettingsStep = SettingsStepNone
+		session.SettingsAuthed = false
+		session.SettingsSelect = SettingsSelectionNone
+		session.SettingsPanelID = 0
+		service.sessions.Upsert(principalID, session)
+		return nil
+
+	default:
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /settings"); err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+		return nil
+	}
 }
 
 func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Service, cb *tgbotapi.CallbackQuery) error {
@@ -317,71 +415,93 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 func handleInlineQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Service, q *tgbotapi.InlineQuery) error {
 	principalID := q.From.ID
 	session, ok := service.sessions.Get(principalID)
-	if !ok || session.ActionStep != ActionStepAwaitingItem {
-		cfg := tgbotapi.InlineConfig{InlineQueryID: q.ID, IsPersonal: true, CacheTime: 0, Results: []interface{}{}}
-		_, _ = api.Request(cfg)
-		return nil
+	if !ok {
+		return answerEmptyInline(api, q.ID)
 	}
 
 	creds, ok := service.creds.Get(principalID)
 	if !ok {
-		cfg := tgbotapi.InlineConfig{InlineQueryID: q.ID, IsPersonal: true, CacheTime: 0, Results: []interface{}{}}
-		_, _ = api.Request(cfg)
-		return nil
+		return answerEmptyInline(api, q.ID)
 	}
 
-	query := strings.TrimSpace(strings.TrimPrefix(q.Query, "item"))
-	items, err := service.erp.SearchItems(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, query, 20)
-	if err != nil {
-		return fmt.Errorf("item search failed: %w", err)
-	}
-
-	results := make([]interface{}, 0, len(items))
-	for _, item := range items {
-		messageText := inlineItemPrefix + item.Code
-		title := item.Code
-		if item.Name != "" && item.Name != item.Code {
-			title = fmt.Sprintf("%s - %s", item.Code, item.Name)
+	if session.ActionStep == ActionStepAwaitingItem {
+		query := normalizeInlineQuery(q.Query, "item")
+		items, err := service.erp.SearchItems(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, query, 20)
+		if err != nil {
+			return fmt.Errorf("item search failed: %w", err)
 		}
-		article := tgbotapi.NewInlineQueryResultArticle(item.Code, title, messageText)
-		if item.UOM != "" {
-			article.Description = "UOM: " + item.UOM
+		results := make([]interface{}, 0, len(items))
+		for _, item := range items {
+			text := inlineItemPrefix + item.Code
+			title := item.Code
+			if item.Name != "" && item.Name != item.Code {
+				title = fmt.Sprintf("%s - %s", item.Code, item.Name)
+			}
+			article := tgbotapi.NewInlineQueryResultArticle(item.Code, title, text)
+			if item.UOM != "" {
+				article.Description = "UOM: " + item.UOM
+			}
+			results = append(results, article)
 		}
-		results = append(results, article)
+		return answerInline(api, q.ID, results)
 	}
 
-	cfg := tgbotapi.InlineConfig{
-		InlineQueryID: q.ID,
-		IsPersonal:    true,
-		CacheTime:     0,
-		Results:       results,
+	if session.SettingsAuthed && session.SettingsSelect == SettingsSelectionWarehouse {
+		query := normalizeInlineQuery(q.Query, "wer")
+		warehouses, err := service.erp.SearchWarehouses(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, query, 20)
+		if err != nil {
+			return fmt.Errorf("warehouse search failed: %w", err)
+		}
+		results := make([]interface{}, 0, len(warehouses))
+		for _, wh := range warehouses {
+			article := tgbotapi.NewInlineQueryResultArticle(wh.Name, wh.Name, inlineWarehousePrefix+wh.Name)
+			results = append(results, article)
+		}
+		return answerInline(api, q.ID, results)
 	}
-	if _, err := api.Request(cfg); err != nil {
-		return fmt.Errorf("inline answer failed: %w", err)
+
+	if session.SettingsAuthed && session.SettingsSelect == SettingsSelectionUOM {
+		query := normalizeInlineQuery(q.Query, "uom")
+		uoms, err := service.erp.SearchUOMs(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, query, 20)
+		if err != nil {
+			return fmt.Errorf("uom search failed: %w", err)
+		}
+		results := make([]interface{}, 0, len(uoms))
+		for _, uom := range uoms {
+			article := tgbotapi.NewInlineQueryResultArticle(uom.Name, uom.Name, inlineUOMPrefix+uom.Name)
+			results = append(results, article)
+		}
+		return answerInline(api, q.ID, results)
 	}
-	return nil
+
+	return answerEmptyInline(api, q.ID)
 }
 
 func buildStockEntryInput(service *Service, session LoginSession, qty float64) (erpnext.CreateStockEntryInput, error) {
+	targetWarehouse, sourceWarehouse, defaultUOM := service.Defaults()
+	if strings.TrimSpace(defaultUOM) == "" {
+		defaultUOM = "Kg"
+	}
+
 	input := erpnext.CreateStockEntryInput{
 		ItemCode: session.SelectedItemCode,
 		Qty:      qty,
-		UOM:      "Kg",
+		UOM:      defaultUOM,
 	}
 
 	switch session.ActionType {
 	case ActionTypeReceipt:
-		if strings.TrimSpace(service.defaultTargetWarehouse) == "" {
+		if strings.TrimSpace(targetWarehouse) == "" {
 			return erpnext.CreateStockEntryInput{}, fmt.Errorf("ERP_DEFAULT_TARGET_WAREHOUSE sozlanmagan")
 		}
 		input.EntryType = "Material Receipt"
-		input.TargetWarehouse = service.defaultTargetWarehouse
+		input.TargetWarehouse = targetWarehouse
 	case ActionTypeIssue:
-		if strings.TrimSpace(service.defaultSourceWarehouse) == "" {
+		if strings.TrimSpace(sourceWarehouse) == "" {
 			return erpnext.CreateStockEntryInput{}, fmt.Errorf("ERP_DEFAULT_SOURCE_WAREHOUSE sozlanmagan")
 		}
 		input.EntryType = "Material Issue"
-		input.SourceWarehouse = service.defaultSourceWarehouse
+		input.SourceWarehouse = sourceWarehouse
 	default:
 		return erpnext.CreateStockEntryInput{}, fmt.Errorf("harakat turi tanlanmagan")
 	}
@@ -413,6 +533,7 @@ func resetSessionMessages(api *tgbotapi.BotAPI, service *Service, chatID, princi
 
 	deleteMessageBestEffort(api, chatID, session.WelcomeMessageID)
 	deleteMessageBestEffort(api, chatID, session.PromptMessageID)
+	deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
 	service.sessions.Clear(principalID)
 }
 
@@ -455,6 +576,55 @@ func itemPickerKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(row)
 }
 
+func warehousePickerKeyboard() tgbotapi.InlineKeyboardMarkup {
+	query := "wer"
+	row := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.InlineKeyboardButton{Text: "Ombor", SwitchInlineQueryCurrentChat: &query},
+	)
+	return tgbotapi.NewInlineKeyboardMarkup(row)
+}
+
+func uomPickerKeyboard() tgbotapi.InlineKeyboardMarkup {
+	query := "uom"
+	row := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.InlineKeyboardButton{Text: "UOM", SwitchInlineQueryCurrentChat: &query},
+	)
+	return tgbotapi.NewInlineKeyboardMarkup(row)
+}
+
+func ensurePanelText(api *tgbotapi.BotAPI, chatID int64, session *LoginSession, service *Service, principalID int64, text string, markup tgbotapi.InlineKeyboardMarkup) error {
+	if session.SettingsPanelID > 0 {
+		var err error
+		if len(markup.InlineKeyboard) > 0 {
+			err = editMessageTextWithKeyboard(api, chatID, session.SettingsPanelID, text, markup)
+		} else {
+			err = editMessageText(api, chatID, session.SettingsPanelID, text)
+		}
+		if err == nil {
+			service.sessions.Upsert(principalID, *session)
+			return nil
+		}
+	}
+
+	msgID, err := sendTextMessageWithKeyboard(api, chatID, text, markup)
+	if err != nil {
+		return err
+	}
+	session.SettingsPanelID = msgID
+	service.sessions.Upsert(principalID, *session)
+	return nil
+}
+
+func answerInline(api *tgbotapi.BotAPI, inlineQueryID string, results []interface{}) error {
+	cfg := tgbotapi.InlineConfig{InlineQueryID: inlineQueryID, IsPersonal: true, CacheTime: 0, Results: results}
+	_, err := api.Request(cfg)
+	return err
+}
+
+func answerEmptyInline(api *tgbotapi.BotAPI, inlineQueryID string) error {
+	return answerInline(api, inlineQueryID, []interface{}{})
+}
+
 func sendTextMessage(api *tgbotapi.BotAPI, chatID int64, text string) (int, error) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	sent, err := api.Send(msg)
@@ -466,7 +636,9 @@ func sendTextMessage(api *tgbotapi.BotAPI, chatID int64, text string) (int, erro
 
 func sendTextMessageWithKeyboard(api *tgbotapi.BotAPI, chatID int64, text string, markup tgbotapi.InlineKeyboardMarkup) (int, error) {
 	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ReplyMarkup = markup
+	if len(markup.InlineKeyboard) > 0 {
+		msg.ReplyMarkup = markup
+	}
 	sent, err := api.Send(msg)
 	if err != nil {
 		return 0, err
@@ -497,15 +669,33 @@ func deleteMessageBestEffort(api *tgbotapi.BotAPI, chatID int64, messageID int) 
 }
 
 func parseInlineItemCode(text string) (string, bool) {
+	return parseInlineValue(text, inlineItemPrefix)
+}
+
+func parseInlineWarehouseName(text string) (string, bool) {
+	return parseInlineValue(text, inlineWarehousePrefix)
+}
+
+func parseInlineUOMName(text string) (string, bool) {
+	return parseInlineValue(text, inlineUOMPrefix)
+}
+
+func parseInlineValue(text, prefix string) (string, bool) {
 	trimmed := strings.TrimSpace(text)
-	if !strings.HasPrefix(trimmed, inlineItemPrefix) {
+	if !strings.HasPrefix(trimmed, prefix) {
 		return "", false
 	}
-	code := strings.TrimSpace(strings.TrimPrefix(trimmed, inlineItemPrefix))
-	if code == "" {
+	value := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+	if value == "" {
 		return "", false
 	}
-	return code, true
+	return value, true
+}
+
+func normalizeInlineQuery(query, trigger string) string {
+	trimmed := strings.TrimSpace(query)
+	trimmed = strings.TrimPrefix(trimmed, trigger)
+	return strings.TrimSpace(trimmed)
 }
 
 func parsePositiveQuantity(text string) (float64, error) {

@@ -27,8 +27,10 @@ func main() {
 		sessions,
 		credStore,
 		erpClient,
+		cfg.SettingsPassword,
 		cfg.DefaultTargetWarehouse,
 		cfg.DefaultSourceWarehouse,
+		cfg.DefaultUOM,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

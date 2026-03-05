@@ -12,8 +12,10 @@ import (
 type Config struct {
 	TelegramToken          string
 	RequestTimeout         time.Duration
+	SettingsPassword       string
 	DefaultTargetWarehouse string
 	DefaultSourceWarehouse string
+	DefaultUOM             string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -36,7 +38,9 @@ func LoadFromEnv() (Config, error) {
 	return Config{
 		TelegramToken:          token,
 		RequestTimeout:         timeout,
+		SettingsPassword:       os.Getenv("SETTINGS_PASSWORD"),
 		DefaultTargetWarehouse: os.Getenv("ERP_DEFAULT_TARGET_WAREHOUSE"),
 		DefaultSourceWarehouse: os.Getenv("ERP_DEFAULT_SOURCE_WAREHOUSE"),
+		DefaultUOM:             os.Getenv("ERP_DEFAULT_UOM"),
 	}, nil
 }

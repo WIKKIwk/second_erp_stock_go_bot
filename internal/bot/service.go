@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"erpnext_stock_telegram/internal/erpnext"
@@ -14,6 +15,8 @@ import (
 type ERPAuthenticator interface {
 	ValidateCredentials(ctx context.Context, baseURL, apiKey, apiSecret string) (erpnext.AuthInfo, error)
 	SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error)
+	SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
+	SearchUOMs(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.UOM, error)
 	CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateStockEntryInput) (erpnext.StockEntryResult, error)
 }
 
@@ -21,18 +24,65 @@ type Service struct {
 	sessions               *SessionManager
 	creds                  store.CredentialStore
 	erp                    ERPAuthenticator
+	settingsPassword       string
+	defaultUOM             string
 	defaultTargetWarehouse string
 	defaultSourceWarehouse string
+	mu                     sync.RWMutex
 }
 
-func NewService(sessions *SessionManager, creds store.CredentialStore, erp ERPAuthenticator, defaultTargetWarehouse, defaultSourceWarehouse string) *Service {
+func NewService(
+	sessions *SessionManager,
+	creds store.CredentialStore,
+	erp ERPAuthenticator,
+	settingsPassword string,
+	defaultTargetWarehouse string,
+	defaultSourceWarehouse string,
+	defaultUOM string,
+) *Service {
+	uom := strings.TrimSpace(defaultUOM)
+	if uom == "" {
+		uom = "Kg"
+	}
 	return &Service{
 		sessions:               sessions,
 		creds:                  creds,
 		erp:                    erp,
+		settingsPassword:       strings.TrimSpace(settingsPassword),
 		defaultTargetWarehouse: strings.TrimSpace(defaultTargetWarehouse),
 		defaultSourceWarehouse: strings.TrimSpace(defaultSourceWarehouse),
+		defaultUOM:             uom,
 	}
+}
+
+func (s *Service) IsSettingsPasswordValid(input string) bool {
+	if s.settingsPassword == "" {
+		return false
+	}
+	return strings.TrimSpace(input) == s.settingsPassword
+}
+
+func (s *Service) SetDefaultWarehouse(warehouse string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	trimmed := strings.TrimSpace(warehouse)
+	s.defaultTargetWarehouse = trimmed
+	s.defaultSourceWarehouse = trimmed
+}
+
+func (s *Service) SetDefaultUOM(uom string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	trimmed := strings.TrimSpace(uom)
+	if trimmed != "" {
+		s.defaultUOM = trimmed
+	}
+}
+
+func (s *Service) Defaults() (targetWarehouse, sourceWarehouse, uom string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.defaultTargetWarehouse, s.defaultSourceWarehouse, s.defaultUOM
 }
 
 func (s *Service) HandleStart(chatID int64) string {
