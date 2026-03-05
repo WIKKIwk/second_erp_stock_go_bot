@@ -53,6 +53,16 @@ func (s *Service) HandleLoginCommand(chatID int64) []string {
 func (s *Service) HandleText(ctx context.Context, chatID int64, text string) []string {
 	session, ok := s.sessions.Get(chatID)
 	if !ok || session.Step == LoginStepNone {
+		if normalized, err := validateAndNormalizeURL(strings.TrimSpace(text)); err == nil {
+			s.sessions.Upsert(chatID, LoginSession{
+				Step:    LoginStepAwaitingAPIKey,
+				BaseURL: normalized,
+			})
+			return []string{
+				"Login sessiyasi qayta tiklandi.",
+				"2/3: API Key kiriting.",
+			}
+		}
 		return []string{"Iltimos, avval /login buyrug'ini yuboring."}
 	}
 
