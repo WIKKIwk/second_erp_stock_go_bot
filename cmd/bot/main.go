@@ -23,6 +23,7 @@ func main() {
 	erpClient := erpnext.NewClient(httpClient)
 	sessions := bot.NewSessionManager()
 	credStore := store.NewMemoryCredentialStore()
+	envPersister := config.NewDotEnvPersister(".env")
 	service := bot.NewService(
 		sessions,
 		credStore,
@@ -31,6 +32,10 @@ func main() {
 		cfg.DefaultTargetWarehouse,
 		cfg.DefaultSourceWarehouse,
 		cfg.DefaultUOM,
+		cfg.DefaultERPURL,
+		cfg.DefaultERPAPIKey,
+		cfg.DefaultERPAPISecret,
+		envPersister,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

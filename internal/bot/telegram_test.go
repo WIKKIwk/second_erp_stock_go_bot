@@ -64,7 +64,7 @@ func TestHandleCallbackQueryAgainDoesNotSendInvalidInlineKeyboard(t *testing.T) 
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, &fakeERP{}, "secret", "", "", "Kg")
+	service := NewService(sessions, creds, &fakeERP{}, "secret", "", "", "Kg", "", "", "", nil)
 
 	principalID := int64(777)
 	creds.Save(principalID, store.Credentials{BaseURL: "https://erp.example.com", APIKey: "k", APISecret: "s"})
@@ -115,4 +115,3 @@ func TestHandleCallbackQueryAgainDoesNotSendInvalidInlineKeyboard(t *testing.T) 
 		t.Fatal("expected editMessageText call")
 	}
 }
-

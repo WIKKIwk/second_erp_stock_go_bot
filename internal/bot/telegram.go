@@ -251,14 +251,14 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return nil
 		}
 
-		creds, found := service.creds.Get(principalID)
-		if !found {
+		if !service.EnsureCredentials(principalID) {
 			if session.PromptMessageID > 0 {
 				_ = editMessageText(api, chatID, session.PromptMessageID, "Sessiya topilmadi. Iltimos, qayta /login qiling.")
 			}
 			service.sessions.Clear(principalID)
 			return nil
 		}
+		creds, _ := service.creds.Get(principalID)
 
 		input, err := buildStockEntryInput(service, session, qty)
 		if err != nil {
@@ -377,7 +377,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	case "stock":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		if _, ok := service.creds.Get(principalID); !ok {
+		if !service.EnsureCredentials(principalID) {
 			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /login qiling."); err != nil {
 				return fmt.Errorf("telegram send failed: %w", err)
 			}
@@ -442,7 +442,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 
 	switch cb.Data {
 	case callbackStartAction:
-		if _, ok := service.creds.Get(principalID); !ok {
+		if !service.EnsureCredentials(principalID) {
 			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /login qiling."); err != nil {
 				return fmt.Errorf("telegram send failed: %w", err)
 			}
@@ -466,7 +466,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		return nil
 
 	case callbackAgainAction:
-		if _, ok := service.creds.Get(principalID); !ok {
+		if !service.EnsureCredentials(principalID) {
 			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /login qiling."); err != nil {
 				return fmt.Errorf("telegram send failed: %w", err)
 			}
@@ -538,10 +538,10 @@ func handleInlineQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Servi
 		return answerEmptyInline(api, q.ID)
 	}
 
-	creds, ok := service.creds.Get(principalID)
-	if !ok {
+	if !service.EnsureCredentials(principalID) {
 		return answerEmptyInline(api, q.ID)
 	}
+	creds, _ := service.creds.Get(principalID)
 
 	if session.ActionStep == ActionStepAwaitingItem {
 		query := normalizeInlineQuery(q.Query, "item")

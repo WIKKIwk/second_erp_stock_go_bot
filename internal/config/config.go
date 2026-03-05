@@ -16,6 +16,9 @@ type Config struct {
 	DefaultTargetWarehouse string
 	DefaultSourceWarehouse string
 	DefaultUOM             string
+	DefaultERPURL          string
+	DefaultERPAPIKey       string
+	DefaultERPAPISecret    string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -42,5 +45,8 @@ func LoadFromEnv() (Config, error) {
 		DefaultTargetWarehouse: os.Getenv("ERP_DEFAULT_TARGET_WAREHOUSE"),
 		DefaultSourceWarehouse: os.Getenv("ERP_DEFAULT_SOURCE_WAREHOUSE"),
 		DefaultUOM:             os.Getenv("ERP_DEFAULT_UOM"),
+		DefaultERPURL:          os.Getenv("ERP_URL"),
+		DefaultERPAPIKey:       os.Getenv("ERP_API_KEY"),
+		DefaultERPAPISecret:    os.Getenv("ERP_API_SECRET"),
 	}, nil
 }

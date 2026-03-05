@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -20,14 +21,22 @@ type ERPAuthenticator interface {
 	CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateStockEntryInput) (erpnext.StockEntryResult, error)
 }
 
+type EnvPersister interface {
+	Upsert(values map[string]string) error
+}
+
 type Service struct {
 	sessions               *SessionManager
 	creds                  store.CredentialStore
 	erp                    ERPAuthenticator
+	envPersister           EnvPersister
 	settingsPassword       string
 	defaultUOM             string
 	defaultTargetWarehouse string
 	defaultSourceWarehouse string
+	defaultBaseURL         string
+	defaultAPIKey          string
+	defaultAPISecret       string
 	mu                     sync.RWMutex
 }
 
@@ -39,6 +48,10 @@ func NewService(
 	defaultTargetWarehouse string,
 	defaultSourceWarehouse string,
 	defaultUOM string,
+	defaultBaseURL string,
+	defaultAPIKey string,
+	defaultAPISecret string,
+	envPersister EnvPersister,
 ) *Service {
 	uom := strings.TrimSpace(defaultUOM)
 	if uom == "" {
@@ -48,10 +61,14 @@ func NewService(
 		sessions:               sessions,
 		creds:                  creds,
 		erp:                    erp,
+		envPersister:           envPersister,
 		settingsPassword:       strings.TrimSpace(settingsPassword),
 		defaultTargetWarehouse: strings.TrimSpace(defaultTargetWarehouse),
 		defaultSourceWarehouse: strings.TrimSpace(defaultSourceWarehouse),
 		defaultUOM:             uom,
+		defaultBaseURL:         strings.TrimSpace(defaultBaseURL),
+		defaultAPIKey:          strings.TrimSpace(defaultAPIKey),
+		defaultAPISecret:       strings.TrimSpace(defaultAPISecret),
 	}
 }
 
@@ -68,6 +85,10 @@ func (s *Service) SetDefaultWarehouse(warehouse string) {
 	trimmed := strings.TrimSpace(warehouse)
 	s.defaultTargetWarehouse = trimmed
 	s.defaultSourceWarehouse = trimmed
+	s.persistEnv(map[string]string{
+		"ERP_DEFAULT_TARGET_WAREHOUSE": trimmed,
+		"ERP_DEFAULT_SOURCE_WAREHOUSE": trimmed,
+	})
 }
 
 func (s *Service) SetDefaultUOM(uom string) {
@@ -76,7 +97,32 @@ func (s *Service) SetDefaultUOM(uom string) {
 	trimmed := strings.TrimSpace(uom)
 	if trimmed != "" {
 		s.defaultUOM = trimmed
+		s.persistEnv(map[string]string{"ERP_DEFAULT_UOM": trimmed})
 	}
+}
+
+func (s *Service) EnsureCredentials(principalID int64) bool {
+	if _, ok := s.creds.Get(principalID); ok {
+		return true
+	}
+
+	s.mu.RLock()
+	baseURL := s.defaultBaseURL
+	apiKey := s.defaultAPIKey
+	apiSecret := s.defaultAPISecret
+	s.mu.RUnlock()
+
+	if baseURL == "" || apiKey == "" || apiSecret == "" {
+		return false
+	}
+
+	s.creds.Save(principalID, store.Credentials{
+		BaseURL:   baseURL,
+		APIKey:    apiKey,
+		APISecret: apiSecret,
+		UpdatedAt: time.Now(),
+	})
+	return true
 }
 
 func (s *Service) Defaults() (targetWarehouse, sourceWarehouse, uom string) {
@@ -86,6 +132,10 @@ func (s *Service) Defaults() (targetWarehouse, sourceWarehouse, uom string) {
 }
 
 func (s *Service) HandleStart(chatID int64) string {
+	if _, ok := s.creds.Get(chatID); !ok {
+		s.EnsureCredentials(chatID)
+	}
+
 	if creds, ok := s.creds.Get(chatID); ok {
 		rolesText := "aniqlanmadi"
 		if len(creds.Roles) > 0 {
@@ -116,6 +166,7 @@ func (s *Service) HandleText(ctx context.Context, chatID int64, text string) str
 			return fmt.Sprintf("Noto'g'ri URL: %v\nQayta kiriting. Masalan: https://erp.example.com", err)
 		}
 		session.BaseURL = normalized
+		s.persistEnv(map[string]string{"ERP_URL": normalized})
 		session.Step = LoginStepAwaitingAPIKey
 		s.sessions.Upsert(chatID, session)
 		return "2/3: API Key kiriting."
@@ -125,6 +176,7 @@ func (s *Service) HandleText(ctx context.Context, chatID int64, text string) str
 			return "API Key bo'sh bo'lmasligi kerak. Qayta kiriting."
 		}
 		session.APIKey = value
+		s.persistEnv(map[string]string{"ERP_API_KEY": value})
 		session.Step = LoginStepAwaitingAPISecret
 		s.sessions.Upsert(chatID, session)
 		return "3/3: API Secret kiriting."
@@ -133,6 +185,7 @@ func (s *Service) HandleText(ctx context.Context, chatID int64, text string) str
 		if value == "" {
 			return "API Secret bo'sh bo'lmasligi kerak. Qayta kiriting."
 		}
+		s.persistEnv(map[string]string{"ERP_API_SECRET": value})
 
 		authInfo, err := s.erp.ValidateCredentials(ctx, session.BaseURL, session.APIKey, value)
 		if err != nil {
@@ -148,6 +201,16 @@ func (s *Service) HandleText(ctx context.Context, chatID int64, text string) str
 			Roles:     authInfo.Roles,
 			UpdatedAt: time.Now(),
 		})
+		s.mu.Lock()
+		s.defaultBaseURL = session.BaseURL
+		s.defaultAPIKey = session.APIKey
+		s.defaultAPISecret = value
+		s.mu.Unlock()
+		s.persistEnv(map[string]string{
+			"ERP_URL":        session.BaseURL,
+			"ERP_API_KEY":    session.APIKey,
+			"ERP_API_SECRET": value,
+		})
 		s.sessions.Clear(chatID)
 
 		rolesText := "aniqlanmadi"
@@ -158,6 +221,15 @@ func (s *Service) HandleText(ctx context.Context, chatID int64, text string) str
 		return fmt.Sprintf("Kirish muvaffaqiyatli.\nERP foydalanuvchi: %s\nRollar: %s", authInfo.Username, rolesText)
 	default:
 		return "Noma'lum holat. Qayta boshlash uchun /login yuboring."
+	}
+}
+
+func (s *Service) persistEnv(values map[string]string) {
+	if s.envPersister == nil || len(values) == 0 {
+		return
+	}
+	if err := s.envPersister.Upsert(values); err != nil {
+		log.Printf("failed to persist .env values: %v", err)
 	}
 }
 
