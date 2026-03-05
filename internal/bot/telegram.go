@@ -500,7 +500,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		service.sessions.Upsert(principalID, session)
 
 		text := fmt.Sprintf("Yana rejim.\nMahsulot: %s\nMiqdor kiriting (faqat 0 dan katta son).", session.LastItemCode)
-		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, text, tgbotapi.NewInlineKeyboardMarkup()); err != nil {
+		if err := editMessageText(api, chatID, cb.Message.MessageID, text); err != nil {
 			return fmt.Errorf("telegram edit failed: %w", err)
 		}
 		return nil
