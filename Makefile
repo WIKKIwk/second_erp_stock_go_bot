@@ -4,22 +4,24 @@ BIN := $(BIN_DIR)/erpnext-bot
 
 .PHONY: run stop build test tidy fmt
 
+token_from_env = $$( [ -f .env ] && sed -n 's/^TELEGRAM_BOT_TOKEN=//p' .env | head -n1 )
+
 build:
 	@mkdir -p $(BIN_DIR)
 	@go build -o $(BIN) $(APP)
 
 stop:
-	@set -a; [ -f .env ] && . ./.env; set +a; \
+	@token="$(token_from_env)"; \
 	pids_bin=$$(pgrep -x -f "$(CURDIR)/bin/erpnext-bot" || true); \
 	pids_go=$$(pgrep -x -f "go run ./cmd/bot" || true); \
 	pids_token=""; \
-	if [ -n "$$TELEGRAM_BOT_TOKEN" ]; then \
+	if [ -n "$$token" ]; then \
 		for pid in $$(pgrep -u "$$(id -u)" || true); do \
 			[ "$$pid" = "$$" ] && continue; \
 			[ "$$pid" = "$$PPID" ] && continue; \
 			env_file="/proc/$$pid/environ"; \
 			[ -r "$$env_file" ] || continue; \
-			if grep -zqx "TELEGRAM_BOT_TOKEN=$$TELEGRAM_BOT_TOKEN" "$$env_file" 2>/dev/null; then \
+			if grep -zqx "TELEGRAM_BOT_TOKEN=$$token" "$$env_file" 2>/dev/null; then \
 				pids_token="$$pids_token $$pid"; \
 			fi; \
 		done; \
@@ -39,7 +41,8 @@ stop:
 	fi
 
 run: stop build
-	@set -a; [ -f .env ] && . ./.env; set +a; \
+	@token="$(token_from_env)"; \
+	if [ -n "$$token" ]; then export TELEGRAM_BOT_TOKEN="$$token"; fi; \
 	echo "Starting bot from $(BIN)"; \
 	exec $(BIN)
 

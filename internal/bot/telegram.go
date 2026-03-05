@@ -270,6 +270,15 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 
 		result, err := service.erp.CreateAndSubmitStockEntry(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, input)
 		if err != nil {
+			log.Printf(
+				"stock entry failed: user=%d action=%s item=%s qty=%.4f uom=%s err=%v",
+				principalID,
+				session.ActionType,
+				session.SelectedItemCode,
+				qty,
+				input.UOM,
+				err,
+			)
 			if session.PromptMessageID > 0 {
 				_ = editMessageText(api, chatID, session.PromptMessageID, userFacingStockError(err))
 			}
