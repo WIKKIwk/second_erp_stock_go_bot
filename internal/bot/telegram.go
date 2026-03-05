@@ -328,6 +328,30 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		service.sessions.Upsert(principalID, session)
 		return ensurePanelText(api, chatID, &session, service, principalID, "Default UOM tanlang. Quyidagi 'UOM' tugmasini bosing.", uomPickerKeyboard())
 
+	case "stock":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if _, ok := service.creds.Get(principalID); !ok {
+			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /login qiling."); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
+
+		promptID, err := sendTextMessageWithKeyboard(api, chatID, "Harakatni tanlang:", actionTypeKeyboard())
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+		clearRecentMessagesAsync(api, chatID, message.MessageID, 40)
+
+		session.Step = LoginStepNone
+		session.PromptMessageID = promptID
+		session.WelcomeMessageID = 0
+		session.ActionStep = ActionStepAwaitingType
+		session.ActionType = ""
+		session.SelectedItemCode = ""
+		service.sessions.Upsert(principalID, session)
+		return nil
+
 	case "logout":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		if session.SettingsPanelID > 0 {
@@ -343,7 +367,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	default:
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /settings"); err != nil {
+		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /settings"); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
 		return nil
