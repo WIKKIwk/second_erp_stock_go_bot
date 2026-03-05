@@ -53,6 +53,7 @@ type LoginSession struct {
 	ActionType       ActionType
 	SelectedItemCode string
 	SelectedUOM      string
+	RequireUOMFirst  bool
 	LastActionType   ActionType
 	LastItemCode     string
 	LastUOM          string

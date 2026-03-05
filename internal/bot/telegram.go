@@ -112,6 +112,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		session.ActionType = ""
 		session.SelectedItemCode = ""
 		session.SelectedUOM = ""
+		session.RequireUOMFirst = false
 		service.sessions.Upsert(principalID, session)
 
 		welcome := "Salom, Admin. Settings panelga xush kelibsiz.\n/wer - default ombor\n/uom - default UOM\n/logout - paneldan chiqish"
@@ -206,6 +207,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		}
 		session.SelectedItemCode = itemCode
 		session.SelectedUOM = ""
+		session.RequireUOMFirst = false
 		session.ActionStep = ActionStepAwaitingQty
 		service.sessions.Upsert(principalID, session)
 		if session.PromptMessageID > 0 {
@@ -223,6 +225,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return nil
 		}
 		session.SelectedUOM = uom
+		session.RequireUOMFirst = false
 		session.ActionStep = ActionStepAwaitingQty
 		service.sessions.Upsert(principalID, session)
 		if session.PromptMessageID > 0 {
@@ -232,6 +235,14 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 
 	case ActionStepAwaitingQty:
 		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if session.RequireUOMFirst && strings.TrimSpace(session.SelectedUOM) == "" {
+			session.ActionStep = ActionStepAwaitingUOM
+			service.sessions.Upsert(principalID, session)
+			if session.PromptMessageID > 0 {
+				_ = editMessageTextWithKeyboard(api, chatID, session.PromptMessageID, "Avval UOM ni tanlang. Quyidagi 'UOM' tugmasini bosing.", uomPickerKeyboard())
+			}
+			return nil
+		}
 		qty, err := parsePositiveQuantity(message.Text)
 		if err != nil {
 			if session.PromptMessageID > 0 {
@@ -272,6 +283,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		session.ActionType = ""
 		session.SelectedItemCode = ""
 		session.SelectedUOM = ""
+		session.RequireUOMFirst = false
 		service.sessions.Upsert(principalID, session)
 
 		success := fmt.Sprintf("Muvaffaqiyatli. Stock Entry yaratildi va submit qilindi: %s", result.Name)
@@ -330,6 +342,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		session.ActionType = ""
 		session.SelectedItemCode = ""
 		session.SelectedUOM = ""
+		session.RequireUOMFirst = false
 		session.PromptMessageID = 0
 		session.WelcomeMessageID = 0
 		service.sessions.Upsert(principalID, session)
@@ -375,6 +388,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		session.ActionType = ""
 		session.SelectedItemCode = ""
 		session.SelectedUOM = ""
+		session.RequireUOMFirst = false
 		service.sessions.Upsert(principalID, session)
 		return nil
 
@@ -461,6 +475,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 			session.ActionType = ""
 			session.SelectedItemCode = ""
 			session.SelectedUOM = ""
+			session.RequireUOMFirst = false
 			service.sessions.Upsert(principalID, session)
 			return nil
 		}
@@ -472,6 +487,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		session.ActionType = session.LastActionType
 		session.SelectedItemCode = session.LastItemCode
 		session.SelectedUOM = ""
+		session.RequireUOMFirst = true
 		service.sessions.Upsert(principalID, session)
 
 		text := fmt.Sprintf("Yana rejim.\nMahsulot: %s\nUOM ni tanlang. Quyidagi 'UOM' tugmasini bosing.", session.LastItemCode)
@@ -493,6 +509,7 @@ func handleCallbackQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		session.ActionStep = ActionStepAwaitingItem
 		session.SelectedItemCode = ""
 		session.SelectedUOM = ""
+		session.RequireUOMFirst = false
 		service.sessions.Upsert(principalID, session)
 
 		if err := editMessageTextWithKeyboard(api, chatID, cb.Message.MessageID, "Mahsulot tanlaymiz. Quyidagi 'Mahsulot' tugmasini bosing.", itemPickerKeyboard()); err != nil {
@@ -632,6 +649,7 @@ func sendStartActionPrompt(api *tgbotapi.BotAPI, service *Service, chatID, princ
 	session.ActionType = ""
 	session.SelectedItemCode = ""
 	session.SelectedUOM = ""
+	session.RequireUOMFirst = false
 	service.sessions.Upsert(principalID, session)
 	return nil
 }
