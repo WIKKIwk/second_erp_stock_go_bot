@@ -137,38 +137,15 @@ func (c *Client) SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecre
 		limit = 20
 	}
 
-	filtersJSON, _ := json.Marshal([][]interface{}{
-		{"disabled", "=", 0},
-	})
-
-	params := url.Values{}
-	params.Set("fields", `["name"]`)
-	params.Set("filters", string(filtersJSON))
-	params.Set("limit_page_length", strconv.Itoa(limit))
-
-	if trimmed := strings.TrimSpace(query); trimmed != "" {
-		like := "%" + strings.ReplaceAll(trimmed, "\"", "") + "%"
-		orFiltersJSON, _ := json.Marshal([][]interface{}{
-			{"name", "like", like},
-			{"warehouse_name", "like", like},
-		})
-		params.Set("or_filters", string(orFiltersJSON))
-	}
-
-	endpoint := normalized + "/api/resource/Warehouse?" + params.Encode()
-	var payload struct {
-		Data []struct {
-			Name string `json:"name"`
-		} `json:"data"`
-	}
-	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+	links, err := c.searchLink(ctx, normalized, apiKey, apiSecret, "Warehouse", query, limit)
+	if err != nil {
 		return nil, err
 	}
 
-	warehouses := make([]Warehouse, 0, len(payload.Data))
-	for _, row := range payload.Data {
-		if row.Name != "" {
-			warehouses = append(warehouses, Warehouse{Name: row.Name})
+	warehouses := make([]Warehouse, 0, len(links))
+	for _, item := range links {
+		if item != "" {
+			warehouses = append(warehouses, Warehouse{Name: item})
 		}
 	}
 	return warehouses, nil
@@ -183,35 +160,43 @@ func (c *Client) SearchUOMs(ctx context.Context, baseURL, apiKey, apiSecret, que
 		limit = 20
 	}
 
-	params := url.Values{}
-	params.Set("fields", `["name"]`)
-	params.Set("limit_page_length", strconv.Itoa(limit))
-
-	if trimmed := strings.TrimSpace(query); trimmed != "" {
-		like := "%" + strings.ReplaceAll(trimmed, "\"", "") + "%"
-		filtersJSON, _ := json.Marshal([][]interface{}{
-			{"name", "like", like},
-		})
-		params.Set("filters", string(filtersJSON))
+	links, err := c.searchLink(ctx, normalized, apiKey, apiSecret, "UOM", query, limit)
+	if err != nil {
+		return nil, err
 	}
 
-	endpoint := normalized + "/api/resource/UOM?" + params.Encode()
+	uoms := make([]UOM, 0, len(links))
+	for _, item := range links {
+		if item != "" {
+			uoms = append(uoms, UOM{Name: item})
+		}
+	}
+	return uoms, nil
+}
+
+func (c *Client) searchLink(ctx context.Context, baseURL, apiKey, apiSecret, doctype, query string, limit int) ([]string, error) {
+	params := url.Values{}
+	params.Set("doctype", doctype)
+	params.Set("txt", strings.TrimSpace(query))
+	params.Set("page_length", strconv.Itoa(limit))
+
+	endpoint := baseURL + "/api/method/frappe.desk.search.search_link?" + params.Encode()
 	var payload struct {
-		Data []struct {
-			Name string `json:"name"`
-		} `json:"data"`
+		Message []struct {
+			Value string `json:"value"`
+		} `json:"message"`
 	}
 	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
 		return nil, err
 	}
 
-	uoms := make([]UOM, 0, len(payload.Data))
-	for _, row := range payload.Data {
-		if row.Name != "" {
-			uoms = append(uoms, UOM{Name: row.Name})
+	result := make([]string, 0, len(payload.Message))
+	for _, row := range payload.Message {
+		if row.Value != "" {
+			result = append(result, row.Value)
 		}
 	}
-	return uoms, nil
+	return result, nil
 }
 
 func (c *Client) CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input CreateStockEntryInput) (StockEntryResult, error) {

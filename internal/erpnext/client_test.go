@@ -162,10 +162,17 @@ func TestCreateAndSubmitStockEntry(t *testing.T) {
 func TestSearchWarehousesAndUOMs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/resource/Warehouse":
-			_, _ = w.Write([]byte(`{"data":[{"name":"Stores - CH"}]}`))
-		case "/api/resource/UOM":
-			_, _ = w.Write([]byte(`{"data":[{"name":"Kg"},{"name":"Nos"}]}`))
+		case "/api/method/frappe.desk.search.search_link":
+			doctype := r.URL.Query().Get("doctype")
+			if doctype == "Warehouse" {
+				_, _ = w.Write([]byte(`{"message":[{"value":"Stores - CH"}]}`))
+				return
+			}
+			if doctype == "UOM" {
+				_, _ = w.Write([]byte(`{"message":[{"value":"Kg"},{"value":"Nos"}]}`))
+				return
+			}
+			http.NotFound(w, r)
 		default:
 			http.NotFound(w, r)
 		}
