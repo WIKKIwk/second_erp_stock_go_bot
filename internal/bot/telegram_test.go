@@ -205,7 +205,7 @@ func TestHandleIncomingMessageSharedContactAuthenticatesAdminDirectly(t *testing
 	supplierManager := &fakeSupplierManager{
 		items: []suplier.Supplier{{Name: "Ali", Phone: "+998901234567"}},
 	}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, "secret", "", "", "Kg", "", "", "", "+998901234567", "Aziza", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, "secret", "", "", "Kg", "", "", "", "+998 90 123 45 67", "Aziza", "", "", nil)
 
 	message := &tgbotapi.Message{
 		MessageID: 2,

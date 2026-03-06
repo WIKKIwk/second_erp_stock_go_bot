@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	adminsvc "erpnext_stock_telegram/internal/admin"
 	"erpnext_stock_telegram/internal/erpnext"
@@ -100,9 +101,9 @@ func NewService(
 		defaultBaseURL:         strings.TrimSpace(defaultBaseURL),
 		defaultAPIKey:          strings.TrimSpace(defaultAPIKey),
 		defaultAPISecret:       strings.TrimSpace(defaultAPISecret),
-		adminkaPhone:           strings.TrimSpace(adminkaPhone),
+		adminkaPhone:           normalizePhoneForMatch(adminkaPhone),
 		adminkaName:            strings.TrimSpace(adminkaName),
-		werkaPhone:             strings.TrimSpace(werkaPhone),
+		werkaPhone:             normalizePhoneForMatch(werkaPhone),
 		werkaName:              strings.TrimSpace(werkaName),
 	}
 }
@@ -175,8 +176,8 @@ func (s *Service) SaveContact(kind ContactSetupKind, phone, name string) error {
 }
 
 func (s *Service) MatchPrivilegedContact(phone string) (UserRole, string, bool) {
-	normalizedPhone, err := adminsvc.NormalizeContactPhone(phone)
-	if err != nil {
+	normalizedPhone := normalizePhoneForMatch(phone)
+	if normalizedPhone == "" {
 		return UserRoleNone, "", false
 	}
 
@@ -190,6 +191,26 @@ func (s *Service) MatchPrivilegedContact(phone string) (UserRole, string, bool) 
 	default:
 		return UserRoleNone, "", false
 	}
+}
+
+func normalizePhoneForMatch(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+
+	var digits strings.Builder
+	for _, r := range trimmed {
+		if unicode.IsDigit(r) {
+			digits.WriteRune(r)
+		}
+	}
+
+	normalizedDigits := digits.String()
+	if len(normalizedDigits) < 9 || len(normalizedDigits) > 12 {
+		return ""
+	}
+	return "+" + normalizedDigits
 }
 
 func (s *Service) IsSettingsPasswordValid(input string) bool {
