@@ -51,6 +51,22 @@ const (
 	SupplierStepAwaitingPhone
 )
 
+type ContactSetupStep int
+
+const (
+	ContactSetupStepNone ContactSetupStep = iota
+	ContactSetupStepAwaitingPhone
+	ContactSetupStepAwaitingName
+)
+
+type ContactSetupKind string
+
+const (
+	ContactSetupKindNone    ContactSetupKind = ""
+	ContactSetupKindAdminka ContactSetupKind = "adminka"
+	ContactSetupKindWerka   ContactSetupKind = "werka"
+)
+
 type SettingsSelectionType string
 
 const (
@@ -86,6 +102,13 @@ type LoginSession struct {
 	SupplierPhoneMsgID      int
 	SupplierNameInputMsgID  int
 	SupplierPhoneInputMsgID int
+	ContactSetupStep        ContactSetupStep
+	ContactSetupKind        ContactSetupKind
+	ContactPhone            string
+	ContactPhoneMsgID       int
+	ContactNameMsgID        int
+	ContactPhoneInputMsgID  int
+	ContactNameInputMsgID   int
 }
 
 type SessionManager struct {

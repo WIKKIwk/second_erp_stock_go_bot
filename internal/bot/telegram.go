@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	adminsvc "erpnext_stock_telegram/internal/admin"
 	"erpnext_stock_telegram/internal/erpnext"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -124,6 +125,56 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		session.AdminAuthed = true
 		service.sessions.Upsert(principalID, session)
 		return ensureAdminPanelText(api, chatID, &session, service, principalID, adminWelcomeText(), tgbotapi.InlineKeyboardMarkup{})
+	}
+
+	if session.ContactSetupStep != ContactSetupStepNone {
+		switch session.ContactSetupStep {
+		case ContactSetupStepAwaitingPhone:
+			phone, err := adminsvc.NormalizeContactPhone(message.Text)
+			if err != nil {
+				deleteMessageBestEffort(api, chatID, message.MessageID)
+				if session.ContactPhoneMsgID > 0 {
+					_ = editMessageText(api, chatID, session.ContactPhoneMsgID, err.Error()+"\nQayta kiriting. Format: +998901234567")
+				}
+				return nil
+			}
+
+			session.ContactPhone = phone
+			session.ContactPhoneInputMsgID = message.MessageID
+			session.ContactSetupStep = ContactSetupStepAwaitingName
+			namePromptID, err := sendTextMessage(api, chatID, contactNamePromptText(session.ContactSetupKind))
+			if err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			session.ContactNameMsgID = namePromptID
+			service.sessions.Upsert(principalID, session)
+			return nil
+
+		case ContactSetupStepAwaitingName:
+			if err := service.SaveContact(session.ContactSetupKind, session.ContactPhone, message.Text); err != nil {
+				deleteMessageBestEffort(api, chatID, message.MessageID)
+				if session.ContactNameMsgID > 0 {
+					_ = editMessageText(api, chatID, session.ContactNameMsgID, err.Error()+"\nQayta kiriting:")
+				}
+				return nil
+			}
+
+			session.ContactNameInputMsgID = message.MessageID
+			clearContactSetupMessages(api, chatID, session)
+			successText := contactSuccessText(session.ContactSetupKind)
+			session.ContactSetupStep = ContactSetupStepNone
+			session.ContactSetupKind = ContactSetupKindNone
+			session.ContactPhone = ""
+			session.ContactPhoneMsgID = 0
+			session.ContactNameMsgID = 0
+			session.ContactPhoneInputMsgID = 0
+			session.ContactNameInputMsgID = 0
+			service.sessions.Upsert(principalID, session)
+			if _, err := sendTextMessage(api, chatID, successText); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
 	}
 
 	if session.AdminAuthed && session.SupplierStep != SupplierStepNone {
@@ -471,6 +522,38 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		service.sessions.Upsert(principalID, session)
 		return nil
 
+	case "adminka":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		phonePromptID, err := sendTextMessage(api, chatID, "Adminka telefon raqamini kiriting. Format: +998901234567")
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+		session.ContactSetupStep = ContactSetupStepAwaitingPhone
+		session.ContactSetupKind = ContactSetupKindAdminka
+		session.ContactPhone = ""
+		session.ContactPhoneMsgID = phonePromptID
+		session.ContactNameMsgID = 0
+		session.ContactPhoneInputMsgID = 0
+		session.ContactNameInputMsgID = 0
+		service.sessions.Upsert(principalID, session)
+		return nil
+
+	case "werka":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		phonePromptID, err := sendTextMessage(api, chatID, "Omborchi telefon raqamini kiriting. Format: +998901234567")
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+		session.ContactSetupStep = ContactSetupStepAwaitingPhone
+		session.ContactSetupKind = ContactSetupKindWerka
+		session.ContactPhone = ""
+		session.ContactPhoneMsgID = phonePromptID
+		session.ContactNameMsgID = 0
+		session.ContactPhoneInputMsgID = 0
+		session.ContactNameInputMsgID = 0
+		service.sessions.Upsert(principalID, session)
+		return nil
+
 	case "wer":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		if !session.SettingsAuthed {
@@ -524,6 +607,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 			deleteMessageBestEffort(api, chatID, session.AdminPanelID)
 		}
 		clearSupplierMessages(api, chatID, session)
+		clearContactSetupMessages(api, chatID, session)
 		clearRecentMessagesAsync(api, chatID, message.MessageID, 40)
 		adminAuthed := session.AdminAuthed
 		session.SettingsStep = SettingsStepNone
@@ -539,6 +623,13 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		session.SupplierPhoneMsgID = 0
 		session.SupplierNameInputMsgID = 0
 		session.SupplierPhoneInputMsgID = 0
+		session.ContactSetupStep = ContactSetupStepNone
+		session.ContactSetupKind = ContactSetupKindNone
+		session.ContactPhone = ""
+		session.ContactPhoneMsgID = 0
+		session.ContactNameMsgID = 0
+		session.ContactPhoneInputMsgID = 0
+		session.ContactNameInputMsgID = 0
 		service.sessions.Upsert(principalID, session)
 		logoutText := "Siz settings dan chiqdingiz."
 		if adminAuthed {
@@ -551,7 +642,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	default:
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /settings, /admin, /supplier"); err != nil {
+		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /settings, /admin, /supplier, /adminka, /werka"); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
 		return nil
@@ -801,6 +892,8 @@ func interruptSessionMessages(api *tgbotapi.BotAPI, chatID int64, session LoginS
 	deleteMessageBestEffort(api, chatID, session.AdminPanelID)
 	deleteMessageBestEffort(api, chatID, session.SupplierNameMsgID)
 	deleteMessageBestEffort(api, chatID, session.SupplierPhoneMsgID)
+	deleteMessageBestEffort(api, chatID, session.ContactPhoneMsgID)
+	deleteMessageBestEffort(api, chatID, session.ContactNameMsgID)
 	if !commandUsesSettingsContext(command) {
 		deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
 	}
@@ -913,7 +1006,7 @@ func ensureAdminPanelText(api *tgbotapi.BotAPI, chatID int64, session *LoginSess
 }
 
 func adminWelcomeText() string {
-	return "Admin panelga xush kelibsiz.\n/supplier - supplier qo'shish"
+	return "Admin panelga xush kelibsiz.\n/supplier - supplier qo'shish\n/adminka - adminka kontaktini saqlash\n/werka - omborchi kontaktini saqlash"
 }
 
 func clearSupplierMessages(api *tgbotapi.BotAPI, chatID int64, session LoginSession) {
@@ -921,6 +1014,35 @@ func clearSupplierMessages(api *tgbotapi.BotAPI, chatID int64, session LoginSess
 	deleteMessageBestEffort(api, chatID, session.SupplierPhoneMsgID)
 	deleteMessageBestEffort(api, chatID, session.SupplierNameInputMsgID)
 	deleteMessageBestEffort(api, chatID, session.SupplierPhoneInputMsgID)
+}
+
+func clearContactSetupMessages(api *tgbotapi.BotAPI, chatID int64, session LoginSession) {
+	deleteMessageBestEffort(api, chatID, session.ContactPhoneMsgID)
+	deleteMessageBestEffort(api, chatID, session.ContactNameMsgID)
+	deleteMessageBestEffort(api, chatID, session.ContactPhoneInputMsgID)
+	deleteMessageBestEffort(api, chatID, session.ContactNameInputMsgID)
+}
+
+func contactNamePromptText(kind ContactSetupKind) string {
+	switch kind {
+	case ContactSetupKindAdminka:
+		return "Adminka ismini kiriting:"
+	case ContactSetupKindWerka:
+		return "Omborchi ismini kiriting:"
+	default:
+		return "Ismni kiriting:"
+	}
+}
+
+func contactSuccessText(kind ContactSetupKind) string {
+	switch kind {
+	case ContactSetupKindAdminka:
+		return "Adminka muvaffaqiyatli saqlandi."
+	case ContactSetupKindWerka:
+		return "Omborchi muvaffaqiyatli saqlandi."
+	default:
+		return "Ma'lumot muvaffaqiyatli saqlandi."
+	}
 }
 
 func answerInline(api *tgbotapi.BotAPI, inlineQueryID string, results []interface{}) error {

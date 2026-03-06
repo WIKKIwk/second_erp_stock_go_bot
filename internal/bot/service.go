@@ -31,6 +31,7 @@ type AdminManager interface {
 	IsConfigured() bool
 	ValidatePassword(input string) bool
 	SetPassword(input string) error
+	SaveContact(kind adminsvc.ContactKind, phone, name string) error
 }
 
 type SupplierManager interface {
@@ -113,6 +114,21 @@ func (s *Service) SetAdminPassword(input string) error {
 		return fmt.Errorf("admin service is not configured")
 	}
 	return s.admin.SetPassword(input)
+}
+
+func (s *Service) SaveContact(kind ContactSetupKind, phone, name string) error {
+	if s.admin == nil {
+		return fmt.Errorf("admin service is not configured")
+	}
+
+	switch kind {
+	case ContactSetupKindAdminka:
+		return s.admin.SaveContact(adminsvc.ContactKindAdminka, phone, name)
+	case ContactSetupKindWerka:
+		return s.admin.SaveContact(adminsvc.ContactKindWerka, phone, name)
+	default:
+		return fmt.Errorf("unknown contact setup kind: %s", kind)
+	}
 }
 
 func (s *Service) IsSettingsPasswordValid(input string) bool {
