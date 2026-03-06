@@ -127,7 +127,7 @@ func commandUsesSettingsContext(command string) bool {
 
 func commandUsesAdminContext(command string) bool {
 	switch command {
-	case "supplier", "logout":
+	case "admin", "supplier", "adminka", "werka", "logout":
 		return true
 	default:
 		return false

@@ -97,6 +97,10 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 	}
 
 	if message.IsCommand() {
+		if session.AdminAuthed && !isAdminCommand(message.Command()) {
+			deleteMessageBestEffort(api, chatID, message.MessageID)
+			return ensureAdminPanelText(api, chatID, &session, service, principalID, adminOnlyCommandText(), tgbotapi.InlineKeyboardMarkup{})
+		}
 		interruptSessionMessages(api, chatID, session, message.Command())
 		session = resetSessionForCommand(session, message.Command())
 		service.sessions.Upsert(principalID, session)
@@ -488,6 +492,10 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	case "admin":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if session.AdminAuthed {
+			service.sessions.Upsert(principalID, session)
+			return ensureAdminPanelText(api, chatID, &session, service, principalID, adminWelcomeText(), tgbotapi.InlineKeyboardMarkup{})
+		}
 		deleteMessageBestEffort(api, chatID, session.AdminPanelID)
 		session.AdminPanelID = 0
 		session.AdminAuthed = false
@@ -524,6 +532,12 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	case "adminka":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if !session.AdminAuthed {
+			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /admin qiling."); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
 		phonePromptID, err := sendTextMessage(api, chatID, "Adminka telefon raqamini kiriting. Format: +998901234567")
 		if err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
@@ -540,6 +554,12 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	case "werka":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if !session.AdminAuthed {
+			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /admin qiling."); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
 		phonePromptID, err := sendTextMessage(api, chatID, "Omborchi telefon raqamini kiriting. Format: +998901234567")
 		if err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
@@ -1007,6 +1027,19 @@ func ensureAdminPanelText(api *tgbotapi.BotAPI, chatID int64, session *LoginSess
 
 func adminWelcomeText() string {
 	return "Admin panelga xush kelibsiz.\n/supplier - supplier qo'shish\n/adminka - adminka kontaktini saqlash\n/werka - omborchi kontaktini saqlash"
+}
+
+func adminOnlyCommandText() string {
+	return "Admin panelda faqat /admin, /supplier, /adminka, /werka, /logout ishlaydi."
+}
+
+func isAdminCommand(command string) bool {
+	switch command {
+	case "admin", "supplier", "adminka", "werka", "logout":
+		return true
+	default:
+		return false
+	}
 }
 
 func clearSupplierMessages(api *tgbotapi.BotAPI, chatID int64, session LoginSession) {

@@ -382,6 +382,7 @@ func TestAdminkaFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	service := NewService(sessions, creds, &fakeERP{}, adminManager, nil, "secret", "", "", "Kg", "", "", "", nil)
+	adminSession := LoginSession{AdminAuthed: true}
 
 	commandMessage := &tgbotapi.Message{
 		MessageID: 1,
@@ -391,7 +392,7 @@ func TestAdminkaFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 			{Type: "bot_command", Offset: 0, Length: len("/adminka")},
 		},
 	}
-	if err := handleCommand(context.Background(), api, service, commandMessage, 123, 123, LoginSession{}); err != nil {
+	if err := handleCommand(context.Background(), api, service, commandMessage, 123, 123, adminSession); err != nil {
 		t.Fatalf("handleCommand returned error: %v", err)
 	}
 
@@ -438,5 +439,92 @@ func TestAdminkaFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 	}
 	if !successFound {
 		t.Fatalf("expected success message, calls=%+v", calls)
+	}
+}
+
+func TestAdminPanelRejectsNonAdminCommandsWithoutLeavingSession(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		calls []telegramCall
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		endpoint := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		form := make(map[string]string, len(r.PostForm))
+		for k, v := range r.PostForm {
+			if len(v) > 0 {
+				form[k] = v[0]
+			}
+		}
+
+		mu.Lock()
+		calls = append(calls, telegramCall{endpoint: endpoint, form: form})
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		switch endpoint {
+		case "getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"bot","username":"bot"}}`))
+		case "editMessageText":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":700,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "deleteMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		default:
+			enc := json.NewEncoder(w)
+			_ = enc.Encode(map[string]any{"ok": true, "result": true})
+		}
+	}))
+	defer server.Close()
+
+	api, err := tgbotapi.NewBotAPIWithClient("TEST_TOKEN", server.URL+"/bot%s/%s", server.Client())
+	if err != nil {
+		t.Fatalf("failed to init bot api: %v", err)
+	}
+
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	service := NewService(sessions, creds, &fakeERP{}, &fakeAdminManager{configured: true, password: "p"}, nil, "secret", "", "", "Kg", "", "", "", nil)
+	sessions.Upsert(123, LoginSession{
+		AdminAuthed:  true,
+		AdminPanelID: 700,
+	})
+
+	message := &tgbotapi.Message{
+		MessageID: 10,
+		Text:      "/stock",
+		Chat:      &tgbotapi.Chat{ID: 123},
+		From:      &tgbotapi.User{ID: 123},
+		Entities: []tgbotapi.MessageEntity{
+			{Type: "bot_command", Offset: 0, Length: len("/stock")},
+		},
+	}
+
+	if err := handleIncomingMessage(context.Background(), api, service, message); err != nil {
+		t.Fatalf("handleIncomingMessage returned error: %v", err)
+	}
+
+	session, ok := sessions.Get(123)
+	if !ok {
+		t.Fatal("expected session to exist")
+	}
+	if !session.AdminAuthed {
+		t.Fatalf("expected admin session to remain active, got %+v", session)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var edited bool
+	for _, call := range calls {
+		if call.endpoint == "editMessageText" && call.form["text"] == adminOnlyCommandText() {
+			edited = true
+		}
+	}
+	if !edited {
+		t.Fatalf("expected admin-only warning to be shown, calls=%+v", calls)
 	}
 }
