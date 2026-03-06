@@ -102,6 +102,30 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		return handleCommand(ctx, api, service, message, principalID, chatID, session)
 	}
 
+	if session.AdminStep == AdminStepAwaitingSetupPassword {
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if err := service.SetAdminPassword(message.Text); err != nil {
+			return ensureAdminPanelText(api, chatID, &session, service, principalID, err.Error()+"\nQayta kiriting:", tgbotapi.InlineKeyboardMarkup{})
+		}
+
+		session.AdminStep = AdminStepNone
+		session.AdminAuthed = true
+		service.sessions.Upsert(principalID, session)
+		return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin parol saqlandi.\nAdmin panelga xush kelibsiz.", tgbotapi.InlineKeyboardMarkup{})
+	}
+
+	if session.AdminStep == AdminStepAwaitingPassword {
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if !service.IsAdminPasswordValid(message.Text) {
+			return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin parol noto'g'ri. Qayta kiriting:", tgbotapi.InlineKeyboardMarkup{})
+		}
+
+		session.AdminStep = AdminStepNone
+		session.AdminAuthed = true
+		service.sessions.Upsert(principalID, session)
+		return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin panelga xush kelibsiz.", tgbotapi.InlineKeyboardMarkup{})
+	}
+
 	if session.SettingsStep == SettingsStepAwaitingPassword {
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		if !service.IsSettingsPasswordValid(message.Text) {
@@ -184,6 +208,10 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 	}
 
 	if session.ActionStep == ActionStepNone {
+		if session.AdminAuthed {
+			deleteMessageBestEffort(api, chatID, message.MessageID)
+			return nil
+		}
 		if session.SettingsAuthed {
 			deleteMessageBestEffort(api, chatID, message.MessageID)
 			return nil
@@ -358,6 +386,21 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		service.sessions.Upsert(principalID, session)
 		return ensurePanelText(api, chatID, &session, service, principalID, "Settings parolini kiriting:", tgbotapi.InlineKeyboardMarkup{})
 
+	case "admin":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		deleteMessageBestEffort(api, chatID, session.AdminPanelID)
+		session.AdminPanelID = 0
+		session.AdminAuthed = false
+		if service.IsAdminConfigured() {
+			session.AdminStep = AdminStepAwaitingPassword
+			service.sessions.Upsert(principalID, session)
+			return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin parolini kiriting:", tgbotapi.InlineKeyboardMarkup{})
+		}
+
+		session.AdminStep = AdminStepAwaitingSetupPassword
+		service.sessions.Upsert(principalID, session)
+		return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin parol yarating:", tgbotapi.InlineKeyboardMarkup{})
+
 	case "wer":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		if !session.SettingsAuthed {
@@ -420,7 +463,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	default:
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /settings"); err != nil {
+		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /settings, /admin"); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
 		return nil
@@ -667,6 +710,7 @@ func sendStartActionPrompt(api *tgbotapi.BotAPI, service *Service, chatID, princ
 func interruptSessionMessages(api *tgbotapi.BotAPI, chatID int64, session LoginSession, command string) {
 	deleteMessageBestEffort(api, chatID, session.WelcomeMessageID)
 	deleteMessageBestEffort(api, chatID, session.PromptMessageID)
+	deleteMessageBestEffort(api, chatID, session.AdminPanelID)
 	if !commandUsesSettingsContext(command) {
 		deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
 	}
@@ -751,6 +795,29 @@ func ensurePanelText(api *tgbotapi.BotAPI, chatID int64, session *LoginSession, 
 		return err
 	}
 	session.SettingsPanelID = msgID
+	service.sessions.Upsert(principalID, *session)
+	return nil
+}
+
+func ensureAdminPanelText(api *tgbotapi.BotAPI, chatID int64, session *LoginSession, service *Service, principalID int64, text string, markup tgbotapi.InlineKeyboardMarkup) error {
+	if session.AdminPanelID > 0 {
+		var err error
+		if len(markup.InlineKeyboard) > 0 {
+			err = editMessageTextWithKeyboard(api, chatID, session.AdminPanelID, text, markup)
+		} else {
+			err = editMessageText(api, chatID, session.AdminPanelID, text)
+		}
+		if err == nil {
+			service.sessions.Upsert(principalID, *session)
+			return nil
+		}
+	}
+
+	msgID, err := sendTextMessageWithKeyboard(api, chatID, text, markup)
+	if err != nil {
+		return err
+	}
+	session.AdminPanelID = msgID
 	service.sessions.Upsert(principalID, *session)
 	return nil
 }

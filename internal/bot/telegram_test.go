@@ -64,7 +64,7 @@ func TestHandleCallbackQueryAgainDoesNotSendInvalidInlineKeyboard(t *testing.T) 
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, &fakeERP{}, "secret", "", "", "Kg", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, "secret", "", "", "Kg", "", "", "", nil)
 
 	principalID := int64(777)
 	creds.Save(principalID, store.Credentials{BaseURL: "https://erp.example.com", APIKey: "k", APISecret: "s"})
@@ -113,5 +113,62 @@ func TestHandleCallbackQueryAgainDoesNotSendInvalidInlineKeyboard(t *testing.T) 
 	}
 	if !editFound {
 		t.Fatal("expected editMessageText call")
+	}
+}
+
+func TestHandleCommandAdminStartsPasswordSetupWhenUnconfigured(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		endpoint := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		w.Header().Set("Content-Type", "application/json")
+		switch endpoint {
+		case "getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"bot","username":"bot"}}`))
+		case "sendMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":77,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "deleteMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		default:
+			enc := json.NewEncoder(w)
+			_ = enc.Encode(map[string]any{"ok": true, "result": true})
+		}
+	}))
+	defer server.Close()
+
+	api, err := tgbotapi.NewBotAPIWithClient("TEST_TOKEN", server.URL+"/bot%s/%s", server.Client())
+	if err != nil {
+		t.Fatalf("failed to init bot api: %v", err)
+	}
+
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	service := NewService(sessions, creds, &fakeERP{}, nil, "secret", "", "", "Kg", "", "", "", nil)
+
+	message := &tgbotapi.Message{
+		MessageID: 1,
+		Text:      "/admin",
+		Chat:      &tgbotapi.Chat{ID: 123},
+		Entities: []tgbotapi.MessageEntity{
+			{Type: "bot_command", Offset: 0, Length: len("/admin")},
+		},
+	}
+
+	if err := handleCommand(context.Background(), api, service, message, 123, 123, LoginSession{}); err != nil {
+		t.Fatalf("handleCommand returned error: %v", err)
+	}
+
+	session, ok := sessions.Get(123)
+	if !ok {
+		t.Fatal("expected session to exist")
+	}
+	if session.AdminStep != AdminStepAwaitingSetupPassword {
+		t.Fatalf("expected admin setup step, got %+v", session)
+	}
+	if session.AdminPanelID == 0 {
+		t.Fatalf("expected admin panel message id to be set, got %+v", session)
 	}
 }

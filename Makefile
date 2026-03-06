@@ -12,6 +12,10 @@ build:
 
 stop:
 	@token="$(token_from_env)"; \
+	token="$${token#\"}"; \
+	token="$${token%\"}"; \
+	token="$${token#\'}"; \
+	token="$${token%\'}"; \
 	pids_bin=$$(pgrep -x -f "$(CURDIR)/bin/erpnext-bot" || true); \
 	pids_go=$$(pgrep -x -f "go run ./cmd/bot" || true); \
 	pids_token=""; \
@@ -42,6 +46,10 @@ stop:
 
 run: stop build
 	@token="$(token_from_env)"; \
+	token="$${token#\"}"; \
+	token="$${token%\"}"; \
+	token="$${token#\'}"; \
+	token="$${token%\'}"; \
 	if [ -n "$$token" ]; then export TELEGRAM_BOT_TOKEN="$$token"; fi; \
 	echo "Starting bot from $(BIN)"; \
 	exec $(BIN)

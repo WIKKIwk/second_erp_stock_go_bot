@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"erpnext_stock_telegram/internal/admin"
 	"erpnext_stock_telegram/internal/bot"
 	"erpnext_stock_telegram/internal/config"
 	"erpnext_stock_telegram/internal/erpnext"
@@ -24,10 +25,12 @@ func main() {
 	sessions := bot.NewSessionManager()
 	credStore := store.NewMemoryCredentialStore()
 	envPersister := config.NewDotEnvPersister(".env")
+	adminService := admin.NewService(cfg.AdminPassword, envPersister)
 	service := bot.NewService(
 		sessions,
 		credStore,
 		erpClient,
+		adminService,
 		cfg.SettingsPassword,
 		cfg.DefaultTargetWarehouse,
 		cfg.DefaultSourceWarehouse,

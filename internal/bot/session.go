@@ -35,6 +35,14 @@ const (
 	SettingsStepAwaitingPassword
 )
 
+type AdminStep int
+
+const (
+	AdminStepNone AdminStep = iota
+	AdminStepAwaitingSetupPassword
+	AdminStepAwaitingPassword
+)
+
 type SettingsSelectionType string
 
 const (
@@ -61,6 +69,9 @@ type LoginSession struct {
 	SettingsAuthed   bool
 	SettingsPanelID  int
 	SettingsSelect   SettingsSelectionType
+	AdminStep        AdminStep
+	AdminAuthed      bool
+	AdminPanelID     int
 }
 
 type SessionManager struct {

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	adminsvc "erpnext_stock_telegram/internal/admin"
 	"erpnext_stock_telegram/internal/erpnext"
 	"erpnext_stock_telegram/internal/store"
 )
@@ -25,10 +26,17 @@ type EnvPersister interface {
 	Upsert(values map[string]string) error
 }
 
+type AdminManager interface {
+	IsConfigured() bool
+	ValidatePassword(input string) bool
+	SetPassword(input string) error
+}
+
 type Service struct {
 	sessions               *SessionManager
 	creds                  store.CredentialStore
 	erp                    ERPAuthenticator
+	admin                  AdminManager
 	envPersister           EnvPersister
 	settingsPassword       string
 	defaultUOM             string
@@ -44,6 +52,7 @@ func NewService(
 	sessions *SessionManager,
 	creds store.CredentialStore,
 	erp ERPAuthenticator,
+	admin AdminManager,
 	settingsPassword string,
 	defaultTargetWarehouse string,
 	defaultSourceWarehouse string,
@@ -57,10 +66,14 @@ func NewService(
 	if uom == "" {
 		uom = "Kg"
 	}
+	if admin == nil {
+		admin = adminsvc.NewService("", envPersister)
+	}
 	return &Service{
 		sessions:               sessions,
 		creds:                  creds,
 		erp:                    erp,
+		admin:                  admin,
 		envPersister:           envPersister,
 		settingsPassword:       strings.TrimSpace(settingsPassword),
 		defaultTargetWarehouse: strings.TrimSpace(defaultTargetWarehouse),
@@ -70,6 +83,21 @@ func NewService(
 		defaultAPIKey:          strings.TrimSpace(defaultAPIKey),
 		defaultAPISecret:       strings.TrimSpace(defaultAPISecret),
 	}
+}
+
+func (s *Service) IsAdminConfigured() bool {
+	return s.admin != nil && s.admin.IsConfigured()
+}
+
+func (s *Service) IsAdminPasswordValid(input string) bool {
+	return s.admin != nil && s.admin.ValidatePassword(input)
+}
+
+func (s *Service) SetAdminPassword(input string) error {
+	if s.admin == nil {
+		return fmt.Errorf("admin service is not configured")
+	}
+	return s.admin.SetPassword(input)
 }
 
 func (s *Service) IsSettingsPasswordValid(input string) bool {
