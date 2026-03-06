@@ -96,6 +96,9 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 	}
 
 	if message.IsCommand() {
+		interruptSessionMessages(api, chatID, session, message.Command())
+		session = resetSessionForCommand(session, message.Command())
+		service.sessions.Upsert(principalID, session)
 		return handleCommand(ctx, api, service, message, principalID, chatID, session)
 	}
 
@@ -313,7 +316,6 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 	switch message.Command() {
 	case "start":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		resetSessionMessages(api, service, chatID, principalID)
 
 		text := service.HandleStart(principalID)
 		welcomeID, err := sendTextMessage(api, chatID, text)
@@ -326,7 +328,6 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	case "login":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		resetSessionMessages(api, service, chatID, principalID)
 
 		text := service.HandleLoginCommand(principalID)
 		promptID, err := sendTextMessage(api, chatID, text)
@@ -663,16 +664,12 @@ func sendStartActionPrompt(api *tgbotapi.BotAPI, service *Service, chatID, princ
 	return nil
 }
 
-func resetSessionMessages(api *tgbotapi.BotAPI, service *Service, chatID, principalID int64) {
-	session, ok := service.sessions.Get(principalID)
-	if !ok {
-		return
-	}
-
+func interruptSessionMessages(api *tgbotapi.BotAPI, chatID int64, session LoginSession, command string) {
 	deleteMessageBestEffort(api, chatID, session.WelcomeMessageID)
 	deleteMessageBestEffort(api, chatID, session.PromptMessageID)
-	deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
-	service.sessions.Clear(principalID)
+	if !commandUsesSettingsContext(command) {
+		deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
+	}
 }
 
 func clearRecentMessagesBestEffort(api *tgbotapi.BotAPI, chatID int64, fromMessageID int, window int) {

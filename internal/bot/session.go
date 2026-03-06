@@ -68,6 +68,24 @@ type SessionManager struct {
 	sessions map[int64]LoginSession
 }
 
+func commandUsesSettingsContext(command string) bool {
+	switch command {
+	case "wer", "uom", "logout":
+		return true
+	default:
+		return false
+	}
+}
+
+func resetSessionForCommand(session LoginSession, command string) LoginSession {
+	cleaned := LoginSession{}
+	if commandUsesSettingsContext(command) {
+		cleaned.SettingsAuthed = session.SettingsAuthed
+		cleaned.SettingsPanelID = session.SettingsPanelID
+	}
+	return cleaned
+}
+
 func NewSessionManager() *SessionManager {
 	return &SessionManager{sessions: make(map[int64]LoginSession)}
 }
