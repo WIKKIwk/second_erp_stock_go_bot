@@ -8,17 +8,27 @@ import (
 )
 
 type FileRepository struct {
-	path string
-	mu   sync.Mutex
+	path     string
+	lockPath string
+	mu       sync.Mutex
 }
 
 func NewFileRepository(path string) *FileRepository {
-	return &FileRepository{path: path}
+	return &FileRepository{
+		path:     path,
+		lockPath: path + ".lock",
+	}
 }
 
 func (r *FileRepository) Add(_ context.Context, supplier Supplier) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	unlock, err := r.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	suppliers, err := r.readAllLocked()
 	if err != nil {
@@ -31,6 +41,13 @@ func (r *FileRepository) Add(_ context.Context, supplier Supplier) error {
 func (r *FileRepository) List(_ context.Context) ([]Supplier, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	unlock, err := r.lock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	return r.readAllLocked()
 }
 
@@ -49,5 +66,5 @@ func (r *FileRepository) writeAllLocked(suppliers []Supplier) error {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(r.path, encodeSuppliers(suppliers), 0o644)
+	return writeAtomically(r.path, encodeSuppliers(suppliers))
 }

@@ -2,7 +2,11 @@ package suplier
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -28,4 +32,68 @@ func TestFileRepositoryAddAndList(t *testing.T) {
 	if items[0].Name != "Ali" || items[1].Phone != "+998901111111" {
 		t.Fatalf("unexpected suppliers: %+v", items)
 	}
+}
+
+func TestFileRepositoryConcurrentProcesses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "suppliers.fb")
+	processes := 6
+	cmds := make([]*exec.Cmd, 0, processes)
+
+	for i := 0; i < processes; i++ {
+		cmd := exec.Command(os.Args[0], "-test.run=TestFileRepositoryHelperProcess", "--", path, strconv.Itoa(i))
+		cmd.Env = append(os.Environ(), "GO_WANT_SUPPLIER_HELPER_PROCESS=1")
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("failed to start helper process %d: %v", i, err)
+		}
+		cmds = append(cmds, cmd)
+	}
+
+	for i, cmd := range cmds {
+		if err := cmd.Wait(); err != nil {
+			t.Fatalf("helper process %d failed: %v", i, err)
+		}
+	}
+
+	repository := NewFileRepository(path)
+	items, err := repository.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(items) != processes {
+		t.Fatalf("expected %d suppliers, got %d: %+v", processes, len(items), items)
+	}
+}
+
+func TestFileRepositoryHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_SUPPLIER_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	args := os.Args
+	sep := -1
+	for i, arg := range args {
+		if arg == "--" {
+			sep = i
+			break
+		}
+	}
+	if sep == -1 || len(args) < sep+3 {
+		os.Exit(2)
+	}
+
+	path := args[sep+1]
+	index, err := strconv.Atoi(args[sep+2])
+	if err != nil {
+		os.Exit(2)
+	}
+
+	repository := NewFileRepository(path)
+	supplier := Supplier{
+		Name:  fmt.Sprintf("Supplier-%d", index),
+		Phone: fmt.Sprintf("+9989012345%02d", index),
+	}
+	if err := repository.Add(context.Background(), supplier); err != nil {
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
