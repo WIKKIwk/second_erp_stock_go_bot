@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 )
 
@@ -51,6 +52,29 @@ func (r *FileRepository) List(_ context.Context) ([]Supplier, error) {
 	return r.readAllLocked()
 }
 
+func (r *FileRepository) FindByPhone(_ context.Context, phone string) (Supplier, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	unlock, err := r.lock()
+	if err != nil {
+		return Supplier{}, false, err
+	}
+	defer unlock()
+
+	suppliers, err := r.readAllLocked()
+	if err != nil {
+		return Supplier{}, false, err
+	}
+	index := sort.Search(len(suppliers), func(i int) bool {
+		return suppliers[i].Phone >= phone
+	})
+	if index < len(suppliers) && suppliers[index].Phone == phone {
+		return suppliers[index], true, nil
+	}
+	return Supplier{}, false, nil
+}
+
 func (r *FileRepository) readAllLocked() ([]Supplier, error) {
 	raw, err := os.ReadFile(r.path)
 	if err != nil {
@@ -66,5 +90,8 @@ func (r *FileRepository) writeAllLocked(suppliers []Supplier) error {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o755); err != nil {
 		return err
 	}
+	sort.Slice(suppliers, func(i, j int) bool {
+		return suppliers[i].Phone < suppliers[j].Phone
+	})
 	return writeAtomically(r.path, encodeSuppliers(suppliers))
 }

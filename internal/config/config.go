@@ -20,6 +20,10 @@ type Config struct {
 	DefaultERPURL          string
 	DefaultERPAPIKey       string
 	DefaultERPAPISecret    string
+	AdminkaPhone           string
+	AdminkaName            string
+	WerkaPhone             string
+	WerkaName              string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -50,5 +54,9 @@ func LoadFromEnv() (Config, error) {
 		DefaultERPURL:          os.Getenv("ERP_URL"),
 		DefaultERPAPIKey:       os.Getenv("ERP_API_KEY"),
 		DefaultERPAPISecret:    os.Getenv("ERP_API_SECRET"),
+		AdminkaPhone:           os.Getenv("ADMINKA_PHONE"),
+		AdminkaName:            os.Getenv("ADMINKA_NAME"),
+		WerkaPhone:             os.Getenv("WERKA_PHONE"),
+		WerkaName:              os.Getenv("WERKA_NAME"),
 	}, nil
 }

@@ -41,6 +41,10 @@ func main() {
 		cfg.DefaultERPURL,
 		cfg.DefaultERPAPIKey,
 		cfg.DefaultERPAPISecret,
+		cfg.AdminkaPhone,
+		cfg.AdminkaName,
+		cfg.WerkaPhone,
+		cfg.WerkaName,
 		envPersister,
 	)
 

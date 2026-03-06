@@ -51,6 +51,14 @@ const (
 	SupplierStepAwaitingPhone
 )
 
+type SupplierAuthStep int
+
+const (
+	SupplierAuthStepNone SupplierAuthStep = iota
+	SupplierAuthStepAwaitingName
+	SupplierAuthStepAwaitingPassword
+)
+
 type ContactSetupStep int
 
 const (
@@ -65,6 +73,15 @@ const (
 	ContactSetupKindNone    ContactSetupKind = ""
 	ContactSetupKindAdminka ContactSetupKind = "adminka"
 	ContactSetupKindWerka   ContactSetupKind = "werka"
+)
+
+type UserRole string
+
+const (
+	UserRoleNone     UserRole = ""
+	UserRoleAdmin    UserRole = "admin"
+	UserRoleWerka    UserRole = "werka"
+	UserRoleSupplier UserRole = "supplier"
 )
 
 type SettingsSelectionType string
@@ -109,6 +126,14 @@ type LoginSession struct {
 	ContactNameMsgID        int
 	ContactPhoneInputMsgID  int
 	ContactNameInputMsgID   int
+	UserRole                UserRole
+	UserName                string
+	UserPhone               string
+	SupplierAuthStep        SupplierAuthStep
+	SupplierAuthName        string
+	SupplierAuthPhone       string
+	SupplierAuthPromptMsgID int
+	SupplierAuthInputMsgID  int
 }
 
 type SessionManager struct {
@@ -135,7 +160,11 @@ func commandUsesAdminContext(command string) bool {
 }
 
 func resetSessionForCommand(session LoginSession, command string) LoginSession {
-	cleaned := LoginSession{}
+	cleaned := LoginSession{
+		UserRole:  session.UserRole,
+		UserName:  session.UserName,
+		UserPhone: session.UserPhone,
+	}
 	if commandUsesSettingsContext(command) {
 		cleaned.SettingsAuthed = session.SettingsAuthed
 		cleaned.SettingsPanelID = session.SettingsPanelID

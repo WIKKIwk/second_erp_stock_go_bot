@@ -3,6 +3,7 @@ package suplier
 import (
 	"context"
 	"fmt"
+	"sort"
 )
 
 type Service struct {
@@ -37,9 +38,28 @@ func (s *Service) Add(ctx context.Context, name, phone string) (Supplier, error)
 	return supplier, nil
 }
 
+func (s *Service) FindByPhone(ctx context.Context, phone string) (Supplier, bool, error) {
+	if s.repository == nil {
+		return Supplier{}, false, fmt.Errorf("supplier repository is not configured")
+	}
+
+	normalizedPhone, err := NormalizePhone(phone)
+	if err != nil {
+		return Supplier{}, false, err
+	}
+	return s.repository.FindByPhone(ctx, normalizedPhone)
+}
+
 func (s *Service) List(ctx context.Context) ([]Supplier, error) {
 	if s.repository == nil {
 		return nil, fmt.Errorf("supplier repository is not configured")
 	}
-	return s.repository.List(ctx)
+	items, err := s.repository.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Phone < items[j].Phone
+	})
+	return items, nil
 }

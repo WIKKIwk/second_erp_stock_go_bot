@@ -29,8 +29,33 @@ func TestFileRepositoryAddAndList(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("expected 2 suppliers, got %d", len(items))
 	}
-	if items[0].Name != "Ali" || items[1].Phone != "+998901111111" {
+	if items[0].Phone != "+998901111111" || items[1].Phone != "+998901234567" {
 		t.Fatalf("unexpected suppliers: %+v", items)
+	}
+}
+
+func TestFileRepositoryFindByPhoneUsesSortedBinarySearchData(t *testing.T) {
+	repository := NewFileRepository(filepath.Join(t.TempDir(), "suppliers.fb"))
+
+	for _, supplier := range []Supplier{
+		{Name: "Vali", Phone: "+998901999999"},
+		{Name: "Ali", Phone: "+998901111111"},
+		{Name: "Sami", Phone: "+998901555555"},
+	} {
+		if err := repository.Add(context.Background(), supplier); err != nil {
+			t.Fatalf("Add returned error: %v", err)
+		}
+	}
+
+	supplier, ok, err := repository.FindByPhone(context.Background(), "+998901555555")
+	if err != nil {
+		t.Fatalf("FindByPhone returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected supplier to be found")
+	}
+	if supplier.Name != "Sami" {
+		t.Fatalf("unexpected supplier: %+v", supplier)
 	}
 }
 

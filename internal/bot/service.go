@@ -36,6 +36,7 @@ type AdminManager interface {
 
 type SupplierManager interface {
 	Add(ctx context.Context, name, phone string) (suplier.Supplier, error)
+	FindByPhone(ctx context.Context, phone string) (suplier.Supplier, bool, error)
 }
 
 type Service struct {
@@ -52,6 +53,10 @@ type Service struct {
 	defaultBaseURL         string
 	defaultAPIKey          string
 	defaultAPISecret       string
+	adminkaPhone           string
+	adminkaName            string
+	werkaPhone             string
+	werkaName              string
 	mu                     sync.RWMutex
 }
 
@@ -68,6 +73,10 @@ func NewService(
 	defaultBaseURL string,
 	defaultAPIKey string,
 	defaultAPISecret string,
+	adminkaPhone string,
+	adminkaName string,
+	werkaPhone string,
+	werkaName string,
 	envPersister EnvPersister,
 ) *Service {
 	uom := strings.TrimSpace(defaultUOM)
@@ -91,6 +100,10 @@ func NewService(
 		defaultBaseURL:         strings.TrimSpace(defaultBaseURL),
 		defaultAPIKey:          strings.TrimSpace(defaultAPIKey),
 		defaultAPISecret:       strings.TrimSpace(defaultAPISecret),
+		adminkaPhone:           strings.TrimSpace(adminkaPhone),
+		adminkaName:            strings.TrimSpace(adminkaName),
+		werkaPhone:             strings.TrimSpace(werkaPhone),
+		werkaName:              strings.TrimSpace(werkaName),
 	}
 }
 
@@ -99,6 +112,13 @@ func (s *Service) AddSupplier(ctx context.Context, name, phone string) (suplier.
 		return suplier.Supplier{}, fmt.Errorf("supplier service is not configured")
 	}
 	return s.supplier.Add(ctx, name, phone)
+}
+
+func (s *Service) FindSupplierByPhone(ctx context.Context, phone string) (suplier.Supplier, bool, error) {
+	if s.supplier == nil {
+		return suplier.Supplier{}, false, fmt.Errorf("supplier service is not configured")
+	}
+	return s.supplier.FindByPhone(ctx, phone)
 }
 
 func (s *Service) IsAdminConfigured() bool {
@@ -121,13 +141,54 @@ func (s *Service) SaveContact(kind ContactSetupKind, phone, name string) error {
 		return fmt.Errorf("admin service is not configured")
 	}
 
+	normalizedPhone, err := adminsvc.NormalizeContactPhone(phone)
+	if err != nil {
+		return err
+	}
+	normalizedName, err := adminsvc.NormalizeContactName(name)
+	if err != nil {
+		return err
+	}
+
 	switch kind {
 	case ContactSetupKindAdminka:
-		return s.admin.SaveContact(adminsvc.ContactKindAdminka, phone, name)
+		if err := s.admin.SaveContact(adminsvc.ContactKindAdminka, normalizedPhone, normalizedName); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		s.adminkaPhone = normalizedPhone
+		s.adminkaName = normalizedName
+		s.mu.Unlock()
+		return nil
 	case ContactSetupKindWerka:
-		return s.admin.SaveContact(adminsvc.ContactKindWerka, phone, name)
+		if err := s.admin.SaveContact(adminsvc.ContactKindWerka, normalizedPhone, normalizedName); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		s.werkaPhone = normalizedPhone
+		s.werkaName = normalizedName
+		s.mu.Unlock()
+		return nil
 	default:
 		return fmt.Errorf("unknown contact setup kind: %s", kind)
+	}
+}
+
+func (s *Service) MatchPrivilegedContact(phone string) (UserRole, string, bool) {
+	normalizedPhone, err := adminsvc.NormalizeContactPhone(phone)
+	if err != nil {
+		return UserRoleNone, "", false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	switch normalizedPhone {
+	case s.adminkaPhone:
+		return UserRoleAdmin, s.adminkaName, s.adminkaPhone != ""
+	case s.werkaPhone:
+		return UserRoleWerka, s.werkaName, s.werkaPhone != ""
+	default:
+		return UserRoleNone, "", false
 	}
 }
 
