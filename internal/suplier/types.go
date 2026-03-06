@@ -1,10 +1,6 @@
 package suplier
 
 type Supplier struct {
-	Name string
-}
-
-type SearchOptions struct {
-	Query string
-	Limit int
+	Name  string
+	Phone string
 }

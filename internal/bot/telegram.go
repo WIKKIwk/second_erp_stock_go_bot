@@ -111,7 +111,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		session.AdminStep = AdminStepNone
 		session.AdminAuthed = true
 		service.sessions.Upsert(principalID, session)
-		return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin parol saqlandi.\nAdmin panelga xush kelibsiz.", tgbotapi.InlineKeyboardMarkup{})
+		return ensureAdminPanelText(api, chatID, &session, service, principalID, adminWelcomeText(), tgbotapi.InlineKeyboardMarkup{})
 	}
 
 	if session.AdminStep == AdminStepAwaitingPassword {
@@ -123,7 +123,56 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		session.AdminStep = AdminStepNone
 		session.AdminAuthed = true
 		service.sessions.Upsert(principalID, session)
-		return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin panelga xush kelibsiz.", tgbotapi.InlineKeyboardMarkup{})
+		return ensureAdminPanelText(api, chatID, &session, service, principalID, adminWelcomeText(), tgbotapi.InlineKeyboardMarkup{})
+	}
+
+	if session.AdminAuthed && session.SupplierStep != SupplierStepNone {
+		switch session.SupplierStep {
+		case SupplierStepAwaitingName:
+			name := strings.TrimSpace(message.Text)
+			if name == "" {
+				deleteMessageBestEffort(api, chatID, message.MessageID)
+				if session.SupplierNameMsgID > 0 {
+					_ = editMessageText(api, chatID, session.SupplierNameMsgID, "Supplier ismi bo'sh bo'lmasligi kerak.\nQayta kiriting:")
+				}
+				return nil
+			}
+
+			session.SupplierName = name
+			session.SupplierNameInputMsgID = message.MessageID
+			session.SupplierStep = SupplierStepAwaitingPhone
+			phonePromptID, err := sendTextMessage(api, chatID, "Telefon raqam kiriting. Format: +998901234567")
+			if err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			session.SupplierPhoneMsgID = phonePromptID
+			service.sessions.Upsert(principalID, session)
+			return nil
+
+		case SupplierStepAwaitingPhone:
+			_, err := service.AddSupplier(ctx, session.SupplierName, message.Text)
+			if err != nil {
+				deleteMessageBestEffort(api, chatID, message.MessageID)
+				if session.SupplierPhoneMsgID > 0 {
+					_ = editMessageText(api, chatID, session.SupplierPhoneMsgID, err.Error()+"\nQayta kiriting. Format: +998901234567")
+				}
+				return nil
+			}
+
+			session.SupplierPhoneInputMsgID = message.MessageID
+			clearSupplierMessages(api, chatID, session)
+			session.SupplierStep = SupplierStepNone
+			session.SupplierName = ""
+			session.SupplierNameMsgID = 0
+			session.SupplierPhoneMsgID = 0
+			session.SupplierNameInputMsgID = 0
+			session.SupplierPhoneInputMsgID = 0
+			service.sessions.Upsert(principalID, session)
+			if _, err := sendTextMessage(api, chatID, "Supplier muvaffaqiyatli qo'shildi."); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
 	}
 
 	if session.SettingsStep == SettingsStepAwaitingPassword {
@@ -401,6 +450,27 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		service.sessions.Upsert(principalID, session)
 		return ensureAdminPanelText(api, chatID, &session, service, principalID, "Admin parol yarating:", tgbotapi.InlineKeyboardMarkup{})
 
+	case "supplier":
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		if !session.AdminAuthed {
+			if _, err := sendTextMessage(api, chatID, "Iltimos, avval /admin qiling."); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
+		namePromptID, err := sendTextMessage(api, chatID, "Supplier ismini kiriting:")
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+		session.SupplierStep = SupplierStepAwaitingName
+		session.SupplierName = ""
+		session.SupplierNameMsgID = namePromptID
+		session.SupplierPhoneMsgID = 0
+		session.SupplierNameInputMsgID = 0
+		session.SupplierPhoneInputMsgID = 0
+		service.sessions.Upsert(principalID, session)
+		return nil
+
 	case "wer":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		if !session.SettingsAuthed {
@@ -450,20 +520,38 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		if session.SettingsPanelID > 0 {
 			deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
 		}
+		if session.AdminPanelID > 0 {
+			deleteMessageBestEffort(api, chatID, session.AdminPanelID)
+		}
+		clearSupplierMessages(api, chatID, session)
 		clearRecentMessagesAsync(api, chatID, message.MessageID, 40)
+		adminAuthed := session.AdminAuthed
 		session.SettingsStep = SettingsStepNone
 		session.SettingsAuthed = false
 		session.SettingsSelect = SettingsSelectionNone
 		session.SettingsPanelID = 0
+		session.AdminStep = AdminStepNone
+		session.AdminAuthed = false
+		session.AdminPanelID = 0
+		session.SupplierStep = SupplierStepNone
+		session.SupplierName = ""
+		session.SupplierNameMsgID = 0
+		session.SupplierPhoneMsgID = 0
+		session.SupplierNameInputMsgID = 0
+		session.SupplierPhoneInputMsgID = 0
 		service.sessions.Upsert(principalID, session)
-		if _, err := sendTextMessage(api, chatID, "Siz settings dan chiqdingiz."); err != nil {
+		logoutText := "Siz settings dan chiqdingiz."
+		if adminAuthed {
+			logoutText = "Siz admin paneldan chiqdingiz."
+		}
+		if _, err := sendTextMessage(api, chatID, logoutText); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
 		return nil
 
 	default:
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /settings, /admin"); err != nil {
+		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /settings, /admin, /supplier"); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
 		return nil
@@ -711,6 +799,8 @@ func interruptSessionMessages(api *tgbotapi.BotAPI, chatID int64, session LoginS
 	deleteMessageBestEffort(api, chatID, session.WelcomeMessageID)
 	deleteMessageBestEffort(api, chatID, session.PromptMessageID)
 	deleteMessageBestEffort(api, chatID, session.AdminPanelID)
+	deleteMessageBestEffort(api, chatID, session.SupplierNameMsgID)
+	deleteMessageBestEffort(api, chatID, session.SupplierPhoneMsgID)
 	if !commandUsesSettingsContext(command) {
 		deleteMessageBestEffort(api, chatID, session.SettingsPanelID)
 	}
@@ -820,6 +910,17 @@ func ensureAdminPanelText(api *tgbotapi.BotAPI, chatID int64, session *LoginSess
 	session.AdminPanelID = msgID
 	service.sessions.Upsert(principalID, *session)
 	return nil
+}
+
+func adminWelcomeText() string {
+	return "Admin panelga xush kelibsiz.\n/supplier - supplier qo'shish"
+}
+
+func clearSupplierMessages(api *tgbotapi.BotAPI, chatID int64, session LoginSession) {
+	deleteMessageBestEffort(api, chatID, session.SupplierNameMsgID)
+	deleteMessageBestEffort(api, chatID, session.SupplierPhoneMsgID)
+	deleteMessageBestEffort(api, chatID, session.SupplierNameInputMsgID)
+	deleteMessageBestEffort(api, chatID, session.SupplierPhoneInputMsgID)
 }
 
 func answerInline(api *tgbotapi.BotAPI, inlineQueryID string, results []interface{}) error {

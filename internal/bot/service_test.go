@@ -42,7 +42,7 @@ func TestServiceLoginFlowSuccess(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{authInfo: erpnext.AuthInfo{Username: "test@example.com", Roles: []string{"Stock User"}}}
-	svc := NewService(sessions, creds, erp, nil, "", "", "", "", "", "", "", nil)
+	svc := NewService(sessions, creds, erp, nil, nil, "", "", "", "", "", "", "", nil)
 
 	chatID := int64(99)
 
@@ -87,7 +87,7 @@ func TestServiceLoginFlowFailure(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{err: errors.New("401 unauthorized")}
-	svc := NewService(sessions, creds, erp, nil, "", "", "", "", "", "", "", nil)
+	svc := NewService(sessions, creds, erp, nil, nil, "", "", "", "", "", "", "", nil)
 
 	chatID := int64(7)
 	svc.HandleLoginCommand(chatID)
@@ -108,7 +108,7 @@ func TestServiceHandleTextRequiresLogin(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{}
-	svc := NewService(sessions, creds, erp, nil, "", "", "", "", "", "", "", nil)
+	svc := NewService(sessions, creds, erp, nil, nil, "", "", "", "", "", "", "", nil)
 
 	msg := svc.HandleText(context.Background(), 123, "https://erp.example.com")
 	if msg != "Iltimos, avval /login buyrug'ini yuboring." {

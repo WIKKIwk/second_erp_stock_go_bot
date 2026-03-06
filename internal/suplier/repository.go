@@ -3,5 +3,6 @@ package suplier
 import "context"
 
 type Repository interface {
-	Search(ctx context.Context, options SearchOptions) ([]Supplier, error)
+	Add(ctx context.Context, supplier Supplier) error
+	List(ctx context.Context) ([]Supplier, error)
 }

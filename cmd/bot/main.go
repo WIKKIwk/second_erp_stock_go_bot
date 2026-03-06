@@ -12,6 +12,7 @@ import (
 	"erpnext_stock_telegram/internal/config"
 	"erpnext_stock_telegram/internal/erpnext"
 	"erpnext_stock_telegram/internal/store"
+	"erpnext_stock_telegram/internal/suplier"
 )
 
 func main() {
@@ -26,11 +27,13 @@ func main() {
 	credStore := store.NewMemoryCredentialStore()
 	envPersister := config.NewDotEnvPersister(".env")
 	adminService := admin.NewService(cfg.AdminPassword, envPersister)
+	supplierService := suplier.NewService(suplier.NewFileRepository("data/suppliers.fb"))
 	service := bot.NewService(
 		sessions,
 		credStore,
 		erpClient,
 		adminService,
+		supplierService,
 		cfg.SettingsPassword,
 		cfg.DefaultTargetWarehouse,
 		cfg.DefaultSourceWarehouse,

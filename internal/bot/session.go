@@ -43,6 +43,14 @@ const (
 	AdminStepAwaitingPassword
 )
 
+type SupplierStep int
+
+const (
+	SupplierStepNone SupplierStep = iota
+	SupplierStepAwaitingName
+	SupplierStepAwaitingPhone
+)
+
 type SettingsSelectionType string
 
 const (
@@ -52,26 +60,32 @@ const (
 )
 
 type LoginSession struct {
-	Step             LoginStep
-	BaseURL          string
-	APIKey           string
-	WelcomeMessageID int
-	PromptMessageID  int
-	ActionStep       ActionStep
-	ActionType       ActionType
-	SelectedItemCode string
-	SelectedUOM      string
-	RequireUOMFirst  bool
-	LastActionType   ActionType
-	LastItemCode     string
-	LastUOM          string
-	SettingsStep     SettingsStep
-	SettingsAuthed   bool
-	SettingsPanelID  int
-	SettingsSelect   SettingsSelectionType
-	AdminStep        AdminStep
-	AdminAuthed      bool
-	AdminPanelID     int
+	Step                    LoginStep
+	BaseURL                 string
+	APIKey                  string
+	WelcomeMessageID        int
+	PromptMessageID         int
+	ActionStep              ActionStep
+	ActionType              ActionType
+	SelectedItemCode        string
+	SelectedUOM             string
+	RequireUOMFirst         bool
+	LastActionType          ActionType
+	LastItemCode            string
+	LastUOM                 string
+	SettingsStep            SettingsStep
+	SettingsAuthed          bool
+	SettingsPanelID         int
+	SettingsSelect          SettingsSelectionType
+	AdminStep               AdminStep
+	AdminAuthed             bool
+	AdminPanelID            int
+	SupplierStep            SupplierStep
+	SupplierName            string
+	SupplierNameMsgID       int
+	SupplierPhoneMsgID      int
+	SupplierNameInputMsgID  int
+	SupplierPhoneInputMsgID int
 }
 
 type SessionManager struct {
@@ -88,11 +102,24 @@ func commandUsesSettingsContext(command string) bool {
 	}
 }
 
+func commandUsesAdminContext(command string) bool {
+	switch command {
+	case "supplier", "logout":
+		return true
+	default:
+		return false
+	}
+}
+
 func resetSessionForCommand(session LoginSession, command string) LoginSession {
 	cleaned := LoginSession{}
 	if commandUsesSettingsContext(command) {
 		cleaned.SettingsAuthed = session.SettingsAuthed
 		cleaned.SettingsPanelID = session.SettingsPanelID
+	}
+	if commandUsesAdminContext(command) {
+		cleaned.AdminAuthed = session.AdminAuthed
+		cleaned.AdminPanelID = session.AdminPanelID
 	}
 	return cleaned
 }

@@ -12,6 +12,7 @@ import (
 	adminsvc "erpnext_stock_telegram/internal/admin"
 	"erpnext_stock_telegram/internal/erpnext"
 	"erpnext_stock_telegram/internal/store"
+	"erpnext_stock_telegram/internal/suplier"
 )
 
 type ERPAuthenticator interface {
@@ -32,11 +33,16 @@ type AdminManager interface {
 	SetPassword(input string) error
 }
 
+type SupplierManager interface {
+	Add(ctx context.Context, name, phone string) (suplier.Supplier, error)
+}
+
 type Service struct {
 	sessions               *SessionManager
 	creds                  store.CredentialStore
 	erp                    ERPAuthenticator
 	admin                  AdminManager
+	supplier               SupplierManager
 	envPersister           EnvPersister
 	settingsPassword       string
 	defaultUOM             string
@@ -53,6 +59,7 @@ func NewService(
 	creds store.CredentialStore,
 	erp ERPAuthenticator,
 	admin AdminManager,
+	supplier SupplierManager,
 	settingsPassword string,
 	defaultTargetWarehouse string,
 	defaultSourceWarehouse string,
@@ -74,6 +81,7 @@ func NewService(
 		creds:                  creds,
 		erp:                    erp,
 		admin:                  admin,
+		supplier:               supplier,
 		envPersister:           envPersister,
 		settingsPassword:       strings.TrimSpace(settingsPassword),
 		defaultTargetWarehouse: strings.TrimSpace(defaultTargetWarehouse),
@@ -83,6 +91,13 @@ func NewService(
 		defaultAPIKey:          strings.TrimSpace(defaultAPIKey),
 		defaultAPISecret:       strings.TrimSpace(defaultAPISecret),
 	}
+}
+
+func (s *Service) AddSupplier(ctx context.Context, name, phone string) (suplier.Supplier, error) {
+	if s.supplier == nil {
+		return suplier.Supplier{}, fmt.Errorf("supplier service is not configured")
+	}
+	return s.supplier.Add(ctx, name, phone)
 }
 
 func (s *Service) IsAdminConfigured() bool {
