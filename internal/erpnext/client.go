@@ -81,6 +81,28 @@ func (c *Client) SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, qu
 		limit = 20
 	}
 
+	seen := make(map[string]struct{})
+	items := make([]Item, 0, limit)
+	for _, variant := range buildSearchQueryVariants(query) {
+		rows, err := c.searchItemsByQuery(ctx, normalized, apiKey, apiSecret, variant, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range rows {
+			if _, ok := seen[item.Code]; ok {
+				continue
+			}
+			seen[item.Code] = struct{}{}
+			items = append(items, item)
+			if len(items) >= limit {
+				return items, nil
+			}
+		}
+	}
+	return items, nil
+}
+
+func (c *Client) searchItemsByQuery(ctx context.Context, normalized, apiKey, apiSecret, query string, limit int) ([]Item, error) {
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"disabled", "=", 0},
 		{"is_stock_item", "=", 1},
@@ -174,28 +196,99 @@ func (c *Client) SearchUOMs(ctx context.Context, baseURL, apiKey, apiSecret, que
 }
 
 func (c *Client) searchLink(ctx context.Context, baseURL, apiKey, apiSecret, doctype, query string, limit int) ([]string, error) {
-	params := url.Values{}
-	params.Set("doctype", doctype)
-	params.Set("txt", strings.TrimSpace(query))
-	params.Set("page_length", strconv.Itoa(limit))
+	seen := make(map[string]struct{})
+	result := make([]string, 0, limit)
+	for _, variant := range buildSearchQueryVariants(query) {
+		params := url.Values{}
+		params.Set("doctype", doctype)
+		params.Set("txt", strings.TrimSpace(variant))
+		params.Set("page_length", strconv.Itoa(limit))
 
-	endpoint := baseURL + "/api/method/frappe.desk.search.search_link?" + params.Encode()
-	var payload struct {
-		Message []struct {
-			Value string `json:"value"`
-		} `json:"message"`
-	}
-	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
-		return nil, err
-	}
+		endpoint := baseURL + "/api/method/frappe.desk.search.search_link?" + params.Encode()
+		var payload struct {
+			Message []struct {
+				Value string `json:"value"`
+			} `json:"message"`
+		}
+		if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+			return nil, err
+		}
 
-	result := make([]string, 0, len(payload.Message))
-	for _, row := range payload.Message {
-		if row.Value != "" {
+		for _, row := range payload.Message {
+			if row.Value == "" {
+				continue
+			}
+			if _, ok := seen[row.Value]; ok {
+				continue
+			}
+			seen[row.Value] = struct{}{}
 			result = append(result, row.Value)
+			if len(result) >= limit {
+				return result, nil
+			}
 		}
 	}
 	return result, nil
+}
+
+func buildSearchQueryVariants(query string) []string {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return []string{""}
+	}
+
+	variants := []string{trimmed}
+	latin := transliterateCyrillicToLatin(trimmed)
+	if latin != "" && !strings.EqualFold(latin, trimmed) {
+		variants = append(variants, latin)
+	}
+	return variants
+}
+
+func transliterateCyrillicToLatin(input string) string {
+	replacer := strings.NewReplacer(
+		"А", "A", "а", "a",
+		"Ә", "A", "ә", "a",
+		"Б", "B", "б", "b",
+		"В", "V", "в", "v",
+		"Г", "G", "г", "g",
+		"Ғ", "G'", "ғ", "g'",
+		"Д", "D", "д", "d",
+		"Е", "E", "е", "e",
+		"Ё", "Yo", "ё", "yo",
+		"Ж", "J", "ж", "j",
+		"З", "Z", "з", "z",
+		"И", "I", "и", "i",
+		"Й", "Y", "й", "y",
+		"К", "K", "к", "k",
+		"Қ", "Q", "қ", "q",
+		"Л", "L", "л", "l",
+		"М", "M", "м", "m",
+		"Н", "N", "н", "n",
+		"Ң", "Ng", "ң", "ng",
+		"О", "O", "о", "o",
+		"Ө", "O", "ө", "o",
+		"П", "P", "п", "p",
+		"Р", "R", "р", "r",
+		"С", "S", "с", "s",
+		"Т", "T", "т", "t",
+		"У", "U", "у", "u",
+		"Ў", "O'", "ў", "o'",
+		"Ү", "U", "ү", "u",
+		"Ф", "F", "ф", "f",
+		"Х", "X", "х", "x",
+		"Ҳ", "H", "ҳ", "h",
+		"Ц", "Ts", "ц", "ts",
+		"Ч", "Ch", "ч", "ch",
+		"Ш", "Sh", "ш", "sh",
+		"Щ", "Sh", "щ", "sh",
+		"Ъ", "'", "ъ", "'",
+		"Ь", "", "ь", "",
+		"Э", "E", "э", "e",
+		"Ю", "Yu", "ю", "yu",
+		"Я", "Ya", "я", "ya",
+	)
+	return replacer.Replace(input)
 }
 
 func (c *Client) CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input CreateStockEntryInput) (StockEntryResult, error) {

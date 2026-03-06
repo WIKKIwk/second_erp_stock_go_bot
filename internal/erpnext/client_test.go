@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -205,5 +206,57 @@ func TestSearchWarehousesAndUOMs(t *testing.T) {
 	}
 	if len(uoms) != 2 || uoms[0].Name == "" {
 		t.Fatalf("unexpected uoms: %+v", uoms)
+	}
+}
+
+func TestBuildSearchQueryVariantsAddsLatinFallbackForCyrillic(t *testing.T) {
+	variants := buildSearchQueryVariants("омбор")
+	if len(variants) != 2 {
+		t.Fatalf("expected 2 variants, got %v", variants)
+	}
+	if variants[0] != "омбор" {
+		t.Fatalf("unexpected first variant: %q", variants[0])
+	}
+	if variants[1] != "ombor" {
+		t.Fatalf("unexpected latin fallback: %q", variants[1])
+	}
+}
+
+func TestSearchWarehousesUsesCyrillicFallbackVariant(t *testing.T) {
+	var queries []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/method/frappe.desk.search.search_link" {
+			http.NotFound(w, r)
+			return
+		}
+
+		query, err := url.QueryUnescape(r.URL.Query().Get("txt"))
+		if err != nil {
+			t.Fatalf("failed to decode query: %v", err)
+		}
+		queries = append(queries, query)
+
+		if query == "ombor" {
+			_, _ = w.Write([]byte(`{"message":[{"value":"Stores - CH"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"message":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	warehouses, err := client.SearchWarehouses(context.Background(), server.URL, "key", "secret", "омбор", 10)
+	if err != nil {
+		t.Fatalf("unexpected warehouse error: %v", err)
+	}
+	if len(warehouses) != 1 || warehouses[0].Name != "Stores - CH" {
+		t.Fatalf("unexpected warehouses: %+v", warehouses)
+	}
+	if len(queries) < 2 {
+		t.Fatalf("expected fallback queries, got %v", queries)
+	}
+	if queries[0] != "омбор" || queries[1] != "ombor" {
+		t.Fatalf("unexpected queries order: %v", queries)
 	}
 }
