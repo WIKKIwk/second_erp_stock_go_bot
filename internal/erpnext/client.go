@@ -32,6 +32,12 @@ type UOM struct {
 	Name string
 }
 
+type Supplier struct {
+	ID    string
+	Name  string
+	Phone string
+}
+
 type CreateStockEntryInput struct {
 	EntryType       string
 	ItemCode        string

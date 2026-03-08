@@ -28,6 +28,22 @@ const (
 	ActionTypeIssue   ActionType = "issue"
 )
 
+type SupplierDispatchStep int
+
+const (
+	SupplierDispatchStepNone SupplierDispatchStep = iota
+	SupplierDispatchStepAwaitingItem
+	SupplierDispatchStepAwaitingQty
+	SupplierDispatchStepAwaitingConfirm
+)
+
+type WarehouseNoticeStep int
+
+const (
+	WarehouseNoticeStepNone WarehouseNoticeStep = iota
+	WarehouseNoticeStepAwaitingAcceptedQty
+)
+
 type SettingsStep int
 
 const (
@@ -57,6 +73,14 @@ const (
 	SupplierAuthStepNone SupplierAuthStep = iota
 	SupplierAuthStepAwaitingName
 	SupplierAuthStepAwaitingPassword
+)
+
+type SupplierAuthMode string
+
+const (
+	SupplierAuthModeNone     SupplierAuthMode = ""
+	SupplierAuthModeRegister SupplierAuthMode = "register"
+	SupplierAuthModeLogin    SupplierAuthMode = "login"
 )
 
 type ContactSetupStep int
@@ -113,6 +137,7 @@ type LoginSession struct {
 	AdminStep               AdminStep
 	AdminAuthed             bool
 	AdminPanelID            int
+	AdminSupplierListActive bool
 	SupplierStep            SupplierStep
 	SupplierName            string
 	SupplierNameMsgID       int
@@ -129,6 +154,20 @@ type LoginSession struct {
 	UserRole                UserRole
 	UserName                string
 	UserPhone               string
+	SupplierDispatchStep    SupplierDispatchStep
+	DispatchItemCode        string
+	DispatchItemName        string
+	DispatchUOM             string
+	DispatchQty             float64
+	WarehouseNoticeStep     WarehouseNoticeStep
+	NoticeReceiptName       string
+	NoticeSupplierPhone     string
+	NoticeSupplierName      string
+	NoticeItemCode          string
+	NoticeItemName          string
+	NoticeUOM               string
+	NoticeSentQty           float64
+	SupplierAuthMode        SupplierAuthMode
 	SupplierAuthStep        SupplierAuthStep
 	SupplierAuthName        string
 	SupplierAuthPhone       string
@@ -152,7 +191,7 @@ func commandUsesSettingsContext(command string) bool {
 
 func commandUsesAdminContext(command string) bool {
 	switch command {
-	case "admin", "supplier", "adminka", "werka", "logout":
+	case "admin", "supplier", "suplier_list", "supplier_list", "adminka", "werka", "logout":
 		return true
 	default:
 		return false

@@ -54,3 +54,27 @@ func TestResetSessionForWerPreservesSettingsContext(t *testing.T) {
 		t.Fatalf("expected settings selection to be cleared, got %+v", got)
 	}
 }
+
+func TestResetSessionForSupplierListPreservesAdminContext(t *testing.T) {
+	session := LoginSession{
+		AdminAuthed:  true,
+		AdminPanelID: 88,
+		UserRole:     UserRoleAdmin,
+		UserName:     "Admin",
+		UserPhone:    "+998901234567",
+		Step:         LoginStepAwaitingAPIKey,
+		ActionStep:   ActionStepAwaitingItem,
+	}
+
+	got := resetSessionForCommand(session, "suplier_list")
+
+	if !got.AdminAuthed {
+		t.Fatal("expected admin auth to be preserved")
+	}
+	if got.AdminPanelID != 88 {
+		t.Fatalf("expected admin panel id 88, got %d", got.AdminPanelID)
+	}
+	if got.Step != LoginStepNone || got.ActionStep != ActionStepNone {
+		t.Fatalf("expected login/action flow to be cleared, got %+v", got)
+	}
+}

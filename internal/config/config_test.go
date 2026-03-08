@@ -36,6 +36,7 @@ func TestLoadFromEnvReadsQuotedValues(t *testing.T) {
 		"ERP_API_KEY",
 		"ERP_API_SECRET",
 		"ERP_TIMEOUT_SECONDS",
+		"WERKA_TELEGRAM_ID",
 	} {
 		_ = os.Unsetenv(key)
 	}

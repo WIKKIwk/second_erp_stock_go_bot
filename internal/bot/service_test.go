@@ -11,8 +11,21 @@ import (
 )
 
 type fakeERP struct {
-	authInfo erpnext.AuthInfo
-	err      error
+	authInfo          erpnext.AuthInfo
+	err               error
+	supplierItems     []erpnext.Item
+	suppliers         []erpnext.Supplier
+	createDraftInput  erpnext.CreatePurchaseReceiptInput
+	createDraftResult erpnext.PurchaseReceiptDraft
+	createDraftErr    error
+	pendingReceipts   []erpnext.PurchaseReceiptDraft
+	pendingErr        error
+	receipt           erpnext.PurchaseReceiptDraft
+	receiptErr        error
+	submitResult      erpnext.PurchaseReceiptSubmissionResult
+	submitErr         error
+	confirmName       string
+	confirmQty        float64
 }
 
 func (f *fakeERP) ValidateCredentials(_ context.Context, _, _, _ string) (erpnext.AuthInfo, error) {
@@ -24,6 +37,14 @@ func (f *fakeERP) ValidateCredentials(_ context.Context, _, _, _ string) (erpnex
 
 func (f *fakeERP) SearchItems(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Item, error) {
 	return nil, nil
+}
+
+func (f *fakeERP) SearchSupplierItems(_ context.Context, _, _, _, _, _ string, _ int) ([]erpnext.Item, error) {
+	return f.supplierItems, nil
+}
+
+func (f *fakeERP) SearchSuppliers(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Supplier, error) {
+	return f.suppliers, nil
 }
 
 func (f *fakeERP) SearchWarehouses(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Warehouse, error) {
@@ -38,11 +59,42 @@ func (f *fakeERP) CreateAndSubmitStockEntry(_ context.Context, _, _, _ string, _
 	return erpnext.StockEntryResult{}, nil
 }
 
+func (f *fakeERP) CreateDraftPurchaseReceipt(_ context.Context, _, _, _ string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
+	f.createDraftInput = input
+	if f.createDraftErr != nil {
+		return erpnext.PurchaseReceiptDraft{}, f.createDraftErr
+	}
+	return f.createDraftResult, nil
+}
+
+func (f *fakeERP) ListPendingPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+	if f.pendingErr != nil {
+		return nil, f.pendingErr
+	}
+	return f.pendingReceipts, nil
+}
+
+func (f *fakeERP) GetPurchaseReceipt(_ context.Context, _, _, _, _ string) (erpnext.PurchaseReceiptDraft, error) {
+	if f.receiptErr != nil {
+		return erpnext.PurchaseReceiptDraft{}, f.receiptErr
+	}
+	return f.receipt, nil
+}
+
+func (f *fakeERP) ConfirmAndSubmitPurchaseReceipt(_ context.Context, _, _, _, name string, qty float64) (erpnext.PurchaseReceiptSubmissionResult, error) {
+	f.confirmName = name
+	f.confirmQty = qty
+	if f.submitErr != nil {
+		return erpnext.PurchaseReceiptSubmissionResult{}, f.submitErr
+	}
+	return f.submitResult, nil
+}
+
 func TestServiceLoginFlowSuccess(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{authInfo: erpnext.AuthInfo{Username: "test@example.com", Roles: []string{"Stock User"}}}
-	svc := NewService(sessions, creds, erp, nil, nil, "", "", "", "", "", "", "", "", "", "", "", nil)
+	svc := NewService(sessions, creds, erp, nil, nil, nil, "", "", "", "", "", "", "", "", "", "", "", 0, nil)
 
 	chatID := int64(99)
 
@@ -87,7 +139,7 @@ func TestServiceLoginFlowFailure(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{err: errors.New("401 unauthorized")}
-	svc := NewService(sessions, creds, erp, nil, nil, "", "", "", "", "", "", "", "", "", "", "", nil)
+	svc := NewService(sessions, creds, erp, nil, nil, nil, "", "", "", "", "", "", "", "", "", "", "", 0, nil)
 
 	chatID := int64(7)
 	svc.HandleLoginCommand(chatID)
@@ -108,7 +160,7 @@ func TestServiceHandleTextRequiresLogin(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	erp := &fakeERP{}
-	svc := NewService(sessions, creds, erp, nil, nil, "", "", "", "", "", "", "", "", "", "", "", nil)
+	svc := NewService(sessions, creds, erp, nil, nil, nil, "", "", "", "", "", "", "", "", "", "", "", 0, nil)
 
 	msg := svc.HandleText(context.Background(), 123, "https://erp.example.com")
 	if msg != "Iltimos, avval /login buyrug'ini yuboring." {

@@ -105,6 +105,55 @@ func TestSearchItems(t *testing.T) {
 	}
 }
 
+func TestSearchSupplierItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/method/frappe.desk.search.search_link":
+			if r.URL.Query().Get("doctype") != "Supplier" {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = w.Write([]byte(`{"message":[{"value":"SUP-001"}]}`))
+		case "/api/resource/Item":
+			_, _ = w.Write([]byte(`{"data":[{"name":"ITEM-001","item_name":"Rice","stock_uom":"Kg"}]}`))
+		case "/api/resource/Item/ITEM-001":
+			_, _ = w.Write([]byte(`{"data":{"default_supplier":"","supplier_items":[{"supplier":"SUP-001"}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	items, err := client.SearchSupplierItems(context.Background(), server.URL, "key", "secret", "Abdulloh", "ri", 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 || items[0].Code != "ITEM-001" || items[0].UOM != "Kg" {
+		t.Fatalf("unexpected supplier items: %+v", items)
+	}
+}
+
+func TestSearchSuppliers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/resource/Supplier" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"name":"SUP-001","supplier_name":"Abdulloh","mobile_no":"+998901234567"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	items, err := client.SearchSuppliers(context.Background(), server.URL, "key", "secret", "abd", 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "Abdulloh" || items[0].Phone != "+998901234567" {
+		t.Fatalf("unexpected suppliers: %+v", items)
+	}
+}
+
 func TestCreateAndSubmitStockEntry(t *testing.T) {
 	var createPayload map[string]interface{}
 	var submitPayload map[string]interface{}
@@ -164,6 +213,87 @@ func TestCreateAndSubmitStockEntry(t *testing.T) {
 	}
 	if createPayload["stock_entry_type"] != "Material Receipt" {
 		t.Fatalf("unexpected create payload: %+v", createPayload)
+	}
+	if submitPayload["doc"] == nil {
+		t.Fatalf("unexpected submit payload: %+v", submitPayload)
+	}
+}
+
+func TestCreateDraftAndSubmitPurchaseReceipt(t *testing.T) {
+	var updatePayload map[string]interface{}
+	var submitPayload map[string]interface{}
+
+	docResponse := `{"data":{"doctype":"Purchase Receipt","name":"MAT-PRE-0001","supplier":"SUP-001","posting_date":"2026-03-07","supplier_delivery_note":"TG:+998901234567:20260307120000","items":[{"item_code":"ITEM-001","item_name":"Rice","qty":10,"uom":"Kg","stock_uom":"Kg","warehouse":"Stores - CH","conversion_factor":1}]}}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/method/frappe.desk.search.search_link":
+			_, _ = w.Write([]byte(`{"message":[{"value":"SUP-001"}]}`))
+		case "/api/resource/Warehouse/Stores - CH", "/api/resource/Warehouse/Stores%20-%20CH":
+			_, _ = w.Write([]byte(`{"data":{"company":"_Test Company"}}`))
+		case "/api/resource/Purchase Receipt":
+			if r.Method != http.MethodPost {
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":{"name":"MAT-PRE-0001"}}`))
+		case "/api/resource/Purchase Receipt/MAT-PRE-0001", "/api/resource/Purchase%20Receipt/MAT-PRE-0001":
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(docResponse))
+			case http.MethodPut:
+				raw, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(raw, &updatePayload)
+				_, _ = w.Write([]byte(`{"data":{"name":"MAT-PRE-0001"}}`))
+			default:
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			}
+		case "/api/method/frappe.client.submit":
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &submitPayload)
+			_, _ = w.Write([]byte(`{"message":{"name":"MAT-PRE-0001","docstatus":1}}`))
+		case "/api/resource/Item":
+			_, _ = w.Write([]byte(`{"data":[{"name":"ITEM-001","item_name":"Rice","stock_uom":"Kg"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	draft, err := client.CreateDraftPurchaseReceipt(context.Background(), server.URL, "key", "secret", CreatePurchaseReceiptInput{
+		Supplier:      "Abdulloh",
+		SupplierPhone: "+998901234567",
+		ItemCode:      "ITEM-001",
+		Qty:           10,
+		UOM:           "Kg",
+		Warehouse:     "Stores - CH",
+	})
+	if err != nil {
+		t.Fatalf("unexpected draft create error: %v", err)
+	}
+	if draft.Name != "MAT-PRE-0001" || draft.ItemCode != "ITEM-001" {
+		t.Fatalf("unexpected draft: %+v", draft)
+	}
+
+	result, err := client.ConfirmAndSubmitPurchaseReceipt(context.Background(), server.URL, "key", "secret", "MAT-PRE-0001", 7)
+	if err != nil {
+		t.Fatalf("unexpected submit error: %v", err)
+	}
+	if result.Name != "MAT-PRE-0001" || result.AcceptedQty != 7 || result.SentQty != 10 {
+		t.Fatalf("unexpected submit result: %+v", result)
+	}
+
+	items, ok := updatePayload["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("unexpected update payload: %+v", updatePayload)
+	}
+	first, ok := items[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected item payload: %+v", items[0])
+	}
+	if first["qty"] != float64(7) || first["received_qty"] != float64(7) {
+		t.Fatalf("unexpected updated item payload: %+v", first)
 	}
 	if submitPayload["doc"] == nil {
 		t.Fatalf("unexpected submit payload: %+v", submitPayload)

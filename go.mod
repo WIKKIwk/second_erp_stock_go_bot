@@ -7,4 +7,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 )
 
-require github.com/google/flatbuffers v25.12.19+incompatible // indirect
+require (
+	github.com/google/flatbuffers v25.12.19+incompatible // indirect
+	golang.org/x/crypto v0.36.0 // indirect
+)

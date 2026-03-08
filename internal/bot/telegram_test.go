@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	adminsvc "erpnext_stock_telegram/internal/admin"
+	"erpnext_stock_telegram/internal/erpnext"
 	"erpnext_stock_telegram/internal/store"
 	"erpnext_stock_telegram/internal/suplier"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -25,6 +26,13 @@ type fakeSupplierManager struct {
 	items []suplier.Supplier
 	added []suplier.Supplier
 	err   error
+}
+
+type fakeSupplierAuthManager struct {
+	items       map[string]suplier.SupplierAuth
+	passwords   map[string]string
+	registerErr error
+	authErr     error
 }
 
 type fakeAdminManager struct {
@@ -77,6 +85,54 @@ func (f *fakeSupplierManager) FindByPhone(_ context.Context, phone string) (supl
 	return suplier.Supplier{}, false, nil
 }
 
+func (f *fakeSupplierManager) List(_ context.Context) ([]suplier.Supplier, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]suplier.Supplier(nil), f.items...), nil
+}
+
+func (f *fakeSupplierAuthManager) FindByPhone(_ context.Context, phone string) (suplier.SupplierAuth, bool, error) {
+	if f.items == nil {
+		return suplier.SupplierAuth{}, false, nil
+	}
+	item, ok := f.items[phone]
+	return item, ok, nil
+}
+
+func (f *fakeSupplierAuthManager) Register(_ context.Context, phone string, telegramUserID int64, password string) (suplier.SupplierAuth, error) {
+	if f.registerErr != nil {
+		return suplier.SupplierAuth{}, f.registerErr
+	}
+	if f.items == nil {
+		f.items = map[string]suplier.SupplierAuth{}
+	}
+	if f.passwords == nil {
+		f.passwords = map[string]string{}
+	}
+	auth := suplier.SupplierAuth{Phone: phone, TelegramUserID: telegramUserID, PasswordHash: "hashed:" + password}
+	f.items[phone] = auth
+	f.passwords[phone] = password
+	return auth, nil
+}
+
+func (f *fakeSupplierAuthManager) Authenticate(_ context.Context, phone string, telegramUserID int64, password string) (suplier.SupplierAuth, error) {
+	if f.authErr != nil {
+		return suplier.SupplierAuth{}, f.authErr
+	}
+	expected, ok := f.passwords[phone]
+	if !ok {
+		return suplier.SupplierAuth{}, suplier.ErrSupplierAuthNotFound
+	}
+	if expected != password {
+		return suplier.SupplierAuth{}, suplier.ErrSupplierAuthInvalidPassword
+	}
+	auth := f.items[phone]
+	auth.TelegramUserID = telegramUserID
+	f.items[phone] = auth
+	return auth, nil
+}
+
 func TestHandleCommandStartRequestsContact(t *testing.T) {
 	var (
 		mu    sync.Mutex
@@ -123,7 +179,7 @@ func TestHandleCommandStartRequestsContact(t *testing.T) {
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, &fakeERP{}, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
 
 	message := &tgbotapi.Message{
 		MessageID: 1,
@@ -205,7 +261,7 @@ func TestHandleIncomingMessageSharedContactAuthenticatesAdminDirectly(t *testing
 	supplierManager := &fakeSupplierManager{
 		items: []suplier.Supplier{{Name: "Ali", Phone: "+998901234567"}},
 	}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, "secret", "", "", "Kg", "", "", "", "+998 90 123 45 67", "Aziza", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, nil, "secret", "", "", "Kg", "", "", "", "+998 90 123 45 67", "Aziza", "", "", 0, nil)
 
 	message := &tgbotapi.Message{
 		MessageID: 2,
@@ -236,6 +292,12 @@ func TestHandleIncomingMessageSharedContactAuthenticatesAdminDirectly(t *testing
 		sendFound = true
 		if call.form["text"] != authenticatedStartText(session) {
 			t.Fatalf("unexpected text: %+v", call.form)
+		}
+		if !strings.Contains(call.form["text"], "/supplier - supplier qo'shish") {
+			t.Fatalf("expected admin commands in text, got %+v", call.form)
+		}
+		if !strings.Contains(call.form["text"], "/logout - paneldan chiqish") {
+			t.Fatalf("expected logout command in text, got %+v", call.form)
 		}
 		if !strings.Contains(call.form["reply_markup"], "remove_keyboard") {
 			t.Fatalf("expected keyboard removal, got %+v", call.form)
@@ -301,7 +363,7 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 	supplierManager := &fakeSupplierManager{
 		items: []suplier.Supplier{{Name: "Abdulloh", Phone: "+998901234567"}},
 	}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, "secret", "", "", "Kg", "", "", "", "", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, &fakeSupplierAuthManager{}, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
 
 	contactMessage := &tgbotapi.Message{
 		MessageID: 3,
@@ -365,11 +427,432 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 			askName = true
 		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Parol kamida 8 belgidan iborat bo'lishi kerak"):
 			weakPasswordEdit = true
-		case call.endpoint == "sendMessage" && call.form["text"] == "Parol qabul qilindi. Siz supplier siz.":
+		case call.endpoint == "sendMessage" &&
+			strings.Contains(call.form["text"], "Ro'yxatdan o'tish yakunlandi. Siz supplier sifatida kirdingiz.") &&
+			strings.Contains(call.form["text"], "/dispatch - jo'natilgan mahsulotni bildirish"):
 			success = true
 		}
 	}
 	if !askName || !weakPasswordEdit || !success {
+		t.Fatalf("unexpected call set: %+v", calls)
+	}
+}
+
+func TestHandleIncomingMessageSharedContactSupplierRepeatLoginFlow(t *testing.T) {
+	var (
+		mu         sync.Mutex
+		calls      []telegramCall
+		sendCount  int
+		messageIDs = []int{71, 72}
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		endpoint := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		form := make(map[string]string, len(r.PostForm))
+		for k, v := range r.PostForm {
+			if len(v) > 0 {
+				form[k] = v[0]
+			}
+		}
+
+		mu.Lock()
+		calls = append(calls, telegramCall{endpoint: endpoint, form: form})
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		switch endpoint {
+		case "getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"bot","username":"bot"}}`))
+		case "sendMessage":
+			id := messageIDs[sendCount]
+			sendCount++
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":` + strconv.Itoa(id) + `,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "editMessageText":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":71,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "deleteMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		default:
+			enc := json.NewEncoder(w)
+			_ = enc.Encode(map[string]any{"ok": true, "result": true})
+		}
+	}))
+	defer server.Close()
+
+	api, err := tgbotapi.NewBotAPIWithClient("TEST_TOKEN", server.URL+"/bot%s/%s", server.Client())
+	if err != nil {
+		t.Fatalf("failed to init bot api: %v", err)
+	}
+
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	supplierManager := &fakeSupplierManager{
+		items: []suplier.Supplier{{Name: "Abdulloh", Phone: "+998901234567"}},
+	}
+	authManager := &fakeSupplierAuthManager{
+		items: map[string]suplier.SupplierAuth{
+			"+998901234567": {Phone: "+998901234567", TelegramUserID: 123, PasswordHash: "hashed:abc12345"},
+		},
+		passwords: map[string]string{
+			"+998901234567": "abc12345",
+		},
+	}
+	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, authManager, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
+
+	contactMessage := &tgbotapi.Message{
+		MessageID: 7,
+		Chat:      &tgbotapi.Chat{ID: 123},
+		From:      &tgbotapi.User{ID: 123},
+		Contact:   &tgbotapi.Contact{PhoneNumber: "+998901234567"},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, contactMessage); err != nil {
+		t.Fatalf("handleIncomingMessage(contact) returned error: %v", err)
+	}
+
+	wrongPassword := &tgbotapi.Message{
+		MessageID: 8,
+		Text:      "wrong",
+		Chat:      &tgbotapi.Chat{ID: 123},
+		From:      &tgbotapi.User{ID: 123},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, wrongPassword); err != nil {
+		t.Fatalf("handleIncomingMessage(wrongPassword) returned error: %v", err)
+	}
+
+	rightPassword := &tgbotapi.Message{
+		MessageID: 9,
+		Text:      "abc12345",
+		Chat:      &tgbotapi.Chat{ID: 123},
+		From:      &tgbotapi.User{ID: 123},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, rightPassword); err != nil {
+		t.Fatalf("handleIncomingMessage(rightPassword) returned error: %v", err)
+	}
+
+	session, ok := sessions.Get(123)
+	if !ok {
+		t.Fatal("expected session to exist")
+	}
+	if session.UserRole != UserRoleSupplier || session.UserName != "Abdulloh" {
+		t.Fatalf("expected supplier login to complete, got %+v", session)
+	}
+	if session.SupplierAuthStep != SupplierAuthStepNone || session.SupplierAuthMode != SupplierAuthModeNone {
+		t.Fatalf("expected supplier auth state to be cleared, got %+v", session)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var askPassword bool
+	var wrongPasswordEdit bool
+	var success bool
+	for _, call := range calls {
+		switch {
+		case call.endpoint == "sendMessage" && call.form["text"] == "Telefon topildi. Parolingizni kiriting:":
+			askPassword = true
+		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Parol noto'g'ri"):
+			wrongPasswordEdit = true
+		case call.endpoint == "sendMessage" &&
+			strings.Contains(call.form["text"], "Kirish muvaffaqiyatli. Siz supplier sifatida kirdingiz.") &&
+			strings.Contains(call.form["text"], "/dispatch - jo'natilgan mahsulotni bildirish"):
+			success = true
+		}
+	}
+	if !askPassword || !wrongPasswordEdit || !success {
+		t.Fatalf("unexpected call set: %+v", calls)
+	}
+}
+
+func TestSupplierDispatchCreatesDraftPurchaseReceiptAndNotifiesWerka(t *testing.T) {
+	var (
+		mu         sync.Mutex
+		calls      []telegramCall
+		sendCount  int
+		messageIDs = []int{101, 102}
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		endpoint := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		form := make(map[string]string, len(r.PostForm))
+		for k, v := range r.PostForm {
+			if len(v) > 0 {
+				form[k] = v[0]
+			}
+		}
+
+		mu.Lock()
+		calls = append(calls, telegramCall{endpoint: endpoint, form: form})
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		switch endpoint {
+		case "getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"bot","username":"bot"}}`))
+		case "sendMessage":
+			id := messageIDs[sendCount]
+			sendCount++
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":` + strconv.Itoa(id) + `,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "editMessageText":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":101,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "answerCallbackQuery", "deleteMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		default:
+			enc := json.NewEncoder(w)
+			_ = enc.Encode(map[string]any{"ok": true, "result": true})
+		}
+	}))
+	defer server.Close()
+
+	api, err := tgbotapi.NewBotAPIWithClient("TEST_TOKEN", server.URL+"/bot%s/%s", server.Client())
+	if err != nil {
+		t.Fatalf("failed to init bot api: %v", err)
+	}
+
+	fakeERP := &fakeERP{
+		supplierItems: []erpnext.Item{{Code: "ITEM-001", Name: "Rice", UOM: "Kg"}},
+		createDraftResult: erpnext.PurchaseReceiptDraft{
+			Name:     "MAT-PRE-0001",
+			Supplier: "Abdulloh",
+			ItemCode: "ITEM-001",
+			Qty:      10,
+			UOM:      "Kg",
+		},
+	}
+
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	service := NewService(sessions, creds, fakeERP, nil, nil, nil, "secret", "Stores - CH", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 999, nil)
+	session := LoginSession{UserRole: UserRoleSupplier, UserName: "Abdulloh", UserPhone: "+998901234567"}
+	sessions.Upsert(123, session)
+
+	command := &tgbotapi.Message{
+		MessageID: 10,
+		Text:      "/dispatch",
+		Chat:      &tgbotapi.Chat{ID: 123},
+		From:      &tgbotapi.User{ID: 123},
+		Entities: []tgbotapi.MessageEntity{
+			{Type: "bot_command", Offset: 0, Length: len("/dispatch")},
+		},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, command); err != nil {
+		t.Fatalf("handleIncomingMessage(command) returned error: %v", err)
+	}
+
+	itemMessage := &tgbotapi.Message{
+		MessageID: 11,
+		Text:      "item::ITEM-001",
+		Chat:      &tgbotapi.Chat{ID: 123},
+		From:      &tgbotapi.User{ID: 123},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, itemMessage); err != nil {
+		t.Fatalf("handleIncomingMessage(item) returned error: %v", err)
+	}
+
+	qtyMessage := &tgbotapi.Message{
+		MessageID: 12,
+		Text:      "10",
+		Chat:      &tgbotapi.Chat{ID: 123},
+		From:      &tgbotapi.User{ID: 123},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, qtyMessage); err != nil {
+		t.Fatalf("handleIncomingMessage(qty) returned error: %v", err)
+	}
+
+	cb := &tgbotapi.CallbackQuery{
+		ID:   "cb-dispatch",
+		Data: callbackDispatchConfirm,
+		From: &tgbotapi.User{ID: 123},
+		Message: &tgbotapi.Message{
+			MessageID: 101,
+			Chat:      &tgbotapi.Chat{ID: 123},
+		},
+	}
+	if err := handleCallbackQuery(context.Background(), api, service, cb); err != nil {
+		t.Fatalf("handleCallbackQuery returned error: %v", err)
+	}
+
+	if fakeERP.createDraftInput.Supplier != "Abdulloh" || fakeERP.createDraftInput.ItemCode != "ITEM-001" {
+		t.Fatalf("unexpected draft input: %+v", fakeERP.createDraftInput)
+	}
+	if fakeERP.createDraftInput.Warehouse != "Stores - CH" || fakeERP.createDraftInput.Qty != 10 {
+		t.Fatalf("unexpected draft input: %+v", fakeERP.createDraftInput)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var supplierPrompt bool
+	var dispatchSuccess bool
+	var werkaNotified bool
+	for _, call := range calls {
+		switch {
+		case call.endpoint == "sendMessage" && strings.Contains(call.form["text"], "Mahsulot tanlang."):
+			supplierPrompt = true
+		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Draft Purchase Receipt: MAT-PRE-0001"):
+			dispatchSuccess = true
+		case call.endpoint == "sendMessage" && call.form["chat_id"] == "999" && strings.Contains(call.form["text"], "Yangi bildirishnoma."):
+			werkaNotified = true
+		}
+	}
+	if !supplierPrompt || !dispatchSuccess || !werkaNotified {
+		t.Fatalf("unexpected call set: %+v", calls)
+	}
+}
+
+func TestWerkaBildirishnomaFlowSubmitsPurchaseReceiptAndNotifiesSupplier(t *testing.T) {
+	var (
+		mu         sync.Mutex
+		calls      []telegramCall
+		sendCount  int
+		messageIDs = []int{201, 202}
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		endpoint := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		form := make(map[string]string, len(r.PostForm))
+		for k, v := range r.PostForm {
+			if len(v) > 0 {
+				form[k] = v[0]
+			}
+		}
+
+		mu.Lock()
+		calls = append(calls, telegramCall{endpoint: endpoint, form: form})
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		switch endpoint {
+		case "getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"bot","username":"bot"}}`))
+		case "sendMessage":
+			id := messageIDs[sendCount]
+			sendCount++
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":` + strconv.Itoa(id) + `,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "editMessageText":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":201,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
+		case "answerCallbackQuery", "deleteMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		default:
+			enc := json.NewEncoder(w)
+			_ = enc.Encode(map[string]any{"ok": true, "result": true})
+		}
+	}))
+	defer server.Close()
+
+	api, err := tgbotapi.NewBotAPIWithClient("TEST_TOKEN", server.URL+"/bot%s/%s", server.Client())
+	if err != nil {
+		t.Fatalf("failed to init bot api: %v", err)
+	}
+
+	fakeERP := &fakeERP{
+		pendingReceipts: []erpnext.PurchaseReceiptDraft{{
+			Name:                 "MAT-PRE-0002",
+			Supplier:             "Abdulloh",
+			SupplierDeliveryNote: "TG:+998901234567:20260307120000",
+			ItemCode:             "ITEM-001",
+			ItemName:             "Rice",
+			Qty:                  10,
+			UOM:                  "Kg",
+		}},
+		receipt: erpnext.PurchaseReceiptDraft{
+			Name:                 "MAT-PRE-0002",
+			Supplier:             "Abdulloh",
+			SupplierDeliveryNote: "TG:+998901234567:20260307120000",
+			ItemCode:             "ITEM-001",
+			ItemName:             "Rice",
+			Qty:                  10,
+			UOM:                  "Kg",
+		},
+		submitResult: erpnext.PurchaseReceiptSubmissionResult{
+			Name:                 "MAT-PRE-0002",
+			Supplier:             "Abdulloh",
+			ItemCode:             "ITEM-001",
+			UOM:                  "Kg",
+			SentQty:              10,
+			AcceptedQty:          7,
+			SupplierDeliveryNote: "TG:+998901234567:20260307120000",
+		},
+	}
+
+	authManager := &fakeSupplierAuthManager{
+		items: map[string]suplier.SupplierAuth{
+			"+998901234567": {Phone: "+998901234567", TelegramUserID: 555},
+		},
+	}
+
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	service := NewService(sessions, creds, fakeERP, nil, nil, authManager, "secret", "Stores - CH", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
+	sessions.Upsert(321, LoginSession{UserRole: UserRoleWerka})
+
+	command := &tgbotapi.Message{
+		MessageID: 20,
+		Text:      "/bildirishnoma",
+		Chat:      &tgbotapi.Chat{ID: 321},
+		From:      &tgbotapi.User{ID: 321},
+		Entities: []tgbotapi.MessageEntity{
+			{Type: "bot_command", Offset: 0, Length: len("/bildirishnoma")},
+		},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, command); err != nil {
+		t.Fatalf("handleIncomingMessage(command) returned error: %v", err)
+	}
+
+	cb := &tgbotapi.CallbackQuery{
+		ID:   "cb-notice",
+		Data: callbackNoticeOpenPrefix + "MAT-PRE-0002",
+		From: &tgbotapi.User{ID: 321},
+		Message: &tgbotapi.Message{
+			MessageID: 201,
+			Chat:      &tgbotapi.Chat{ID: 321},
+		},
+	}
+	if err := handleCallbackQuery(context.Background(), api, service, cb); err != nil {
+		t.Fatalf("handleCallbackQuery returned error: %v", err)
+	}
+
+	qtyMessage := &tgbotapi.Message{
+		MessageID: 21,
+		Text:      "7",
+		Chat:      &tgbotapi.Chat{ID: 321},
+		From:      &tgbotapi.User{ID: 321},
+	}
+	if err := handleIncomingMessage(context.Background(), api, service, qtyMessage); err != nil {
+		t.Fatalf("handleIncomingMessage(qty) returned error: %v", err)
+	}
+
+	if fakeERP.confirmName != "MAT-PRE-0002" || fakeERP.confirmQty != 7 {
+		t.Fatalf("unexpected submit call: name=%q qty=%v", fakeERP.confirmName, fakeERP.confirmQty)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var pendingListShown bool
+	var qtyPromptShown bool
+	var supplierNotified bool
+	for _, call := range calls {
+		switch {
+		case call.endpoint == "sendMessage" && strings.Contains(call.form["text"], "Pending qabul qilish ro'yxati"):
+			pendingListShown = true
+		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Qabul qilingan miqdorni kiriting."):
+			qtyPromptShown = true
+		case call.endpoint == "sendMessage" && call.form["chat_id"] == "555" && strings.Contains(call.form["text"], "Omborchi mahsulotni qabul qildi."):
+			supplierNotified = true
+		}
+	}
+	if !pendingListShown || !qtyPromptShown || !supplierNotified {
 		t.Fatalf("unexpected call set: %+v", calls)
 	}
 }
@@ -420,7 +903,7 @@ func TestHandleCallbackQueryAgainDoesNotSendInvalidInlineKeyboard(t *testing.T) 
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, &fakeERP{}, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
 
 	principalID := int64(777)
 	creds.Save(principalID, store.Credentials{BaseURL: "https://erp.example.com", APIKey: "k", APISecret: "s"})
@@ -502,7 +985,7 @@ func TestHandleCommandAdminStartsPasswordSetupWhenUnconfigured(t *testing.T) {
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, &fakeERP{}, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
 
 	message := &tgbotapi.Message{
 		MessageID: 1,
@@ -580,7 +1063,7 @@ func TestSupplierFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	supplierManager := &fakeSupplierManager{}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, "secret", "", "", "Kg", "", "", "", "", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
 
 	adminSession := LoginSession{AdminAuthed: true}
 	commandMessage := &tgbotapi.Message{
@@ -692,7 +1175,7 @@ func TestAdminkaFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 	adminManager := &fakeAdminManager{}
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, &fakeERP{}, adminManager, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, adminManager, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
 	adminSession := LoginSession{AdminAuthed: true}
 
 	commandMessage := &tgbotapi.Message{
@@ -799,7 +1282,7 @@ func TestAdminPanelRejectsNonAdminCommandsWithoutLeavingSession(t *testing.T) {
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, &fakeERP{}, &fakeAdminManager{configured: true, password: "p"}, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", nil)
+	service := NewService(sessions, creds, &fakeERP{}, &fakeAdminManager{configured: true, password: "p"}, nil, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
 	sessions.Upsert(123, LoginSession{
 		AdminAuthed:  true,
 		AdminPanelID: 700,

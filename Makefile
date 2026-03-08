@@ -2,7 +2,7 @@ APP := ./cmd/bot
 BIN_DIR := ./bin
 BIN := $(BIN_DIR)/erpnext-bot
 
-.PHONY: run stop build test tidy fmt
+.PHONY: run stop build test tidy fmt local-erp-env local-erp-check run-local-erp run-mobile-api
 
 token_from_env = $$( [ -f .env ] && sed -n 's/^TELEGRAM_BOT_TOKEN=//p' .env | head -n1 )
 
@@ -54,6 +54,22 @@ run: stop build
 	echo "Starting bot from $(BIN)"; \
 	exec $(BIN)
 
+local-erp-env:
+	@./scripts/setup_local_erp_env.sh
+
+local-erp-check:
+	@url=$$( [ -f .env ] && sed -n 's/^ERP_URL=//p' .env | head -n1 ); \
+	key=$$( [ -f .env ] && sed -n 's/^ERP_API_KEY=//p' .env | head -n1 ); \
+	secret=$$( [ -f .env ] && sed -n 's/^ERP_API_SECRET=//p' .env | head -n1 ); \
+	if [ -z "$$url" ] || [ -z "$$key" ] || [ -z "$$secret" ]; then \
+		echo "ERP_URL / ERP_API_KEY / ERP_API_SECRET topilmadi. Avval make local-erp-env ni ishga tushiring."; \
+		exit 1; \
+	fi; \
+	echo "Checking $$url"; \
+	curl -fsS -H "Authorization: token $$key:$$secret" "$$url/api/method/frappe.auth.get_logged_user"
+
+run-local-erp: local-erp-env run
+
 test:
 	@go test ./...
 
@@ -62,3 +78,6 @@ tidy:
 
 fmt:
 	@gofmt -w $$(find . -name '*.go' -type f)
+
+run-mobile-api:
+	@go run ./cmd/mobileapi

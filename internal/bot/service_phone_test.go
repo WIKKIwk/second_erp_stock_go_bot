@@ -13,6 +13,7 @@ func TestMatchPrivilegedContactIgnoresPhoneFormatting(t *testing.T) {
 		&fakeERP{},
 		nil,
 		nil,
+		nil,
 		"",
 		"",
 		"",
@@ -24,6 +25,7 @@ func TestMatchPrivilegedContactIgnoresPhoneFormatting(t *testing.T) {
 		"Admin",
 		"998(71)200-00-00",
 		"Werka",
+		0,
 		nil,
 	)
 

@@ -24,6 +24,7 @@ type Config struct {
 	AdminkaName            string
 	WerkaPhone             string
 	WerkaName              string
+	WerkaTelegramID        int64
 }
 
 func LoadFromEnv() (Config, error) {
@@ -43,6 +44,15 @@ func LoadFromEnv() (Config, error) {
 		timeout = time.Duration(seconds) * time.Second
 	}
 
+	var werkaTelegramID int64
+	if raw := os.Getenv("WERKA_TELEGRAM_ID"); raw != "" {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid WERKA_TELEGRAM_ID: %q", raw)
+		}
+		werkaTelegramID = value
+	}
+
 	return Config{
 		TelegramToken:          token,
 		RequestTimeout:         timeout,
@@ -58,5 +68,6 @@ func LoadFromEnv() (Config, error) {
 		AdminkaName:            os.Getenv("ADMINKA_NAME"),
 		WerkaPhone:             os.Getenv("WERKA_PHONE"),
 		WerkaName:              os.Getenv("WERKA_NAME"),
+		WerkaTelegramID:        werkaTelegramID,
 	}, nil
 }

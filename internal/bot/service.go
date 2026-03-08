@@ -19,9 +19,15 @@ import (
 type ERPAuthenticator interface {
 	ValidateCredentials(ctx context.Context, baseURL, apiKey, apiSecret string) (erpnext.AuthInfo, error)
 	SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error)
+	SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]erpnext.Item, error)
+	SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error)
 	SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
 	SearchUOMs(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.UOM, error)
 	CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateStockEntryInput) (erpnext.StockEntryResult, error)
+	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
+	ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
+	GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string) (erpnext.PurchaseReceiptDraft, error)
+	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty float64) (erpnext.PurchaseReceiptSubmissionResult, error)
 }
 
 type EnvPersister interface {
@@ -38,6 +44,13 @@ type AdminManager interface {
 type SupplierManager interface {
 	Add(ctx context.Context, name, phone string) (suplier.Supplier, error)
 	FindByPhone(ctx context.Context, phone string) (suplier.Supplier, bool, error)
+	List(ctx context.Context) ([]suplier.Supplier, error)
+}
+
+type SupplierAuthManager interface {
+	FindByPhone(ctx context.Context, phone string) (suplier.SupplierAuth, bool, error)
+	Register(ctx context.Context, phone string, telegramUserID int64, password string) (suplier.SupplierAuth, error)
+	Authenticate(ctx context.Context, phone string, telegramUserID int64, password string) (suplier.SupplierAuth, error)
 }
 
 type Service struct {
@@ -46,6 +59,7 @@ type Service struct {
 	erp                    ERPAuthenticator
 	admin                  AdminManager
 	supplier               SupplierManager
+	supplierAuth           SupplierAuthManager
 	envPersister           EnvPersister
 	settingsPassword       string
 	defaultUOM             string
@@ -58,6 +72,7 @@ type Service struct {
 	adminkaName            string
 	werkaPhone             string
 	werkaName              string
+	werkaTelegramID        int64
 	mu                     sync.RWMutex
 }
 
@@ -67,6 +82,7 @@ func NewService(
 	erp ERPAuthenticator,
 	admin AdminManager,
 	supplier SupplierManager,
+	supplierAuth SupplierAuthManager,
 	settingsPassword string,
 	defaultTargetWarehouse string,
 	defaultSourceWarehouse string,
@@ -78,6 +94,7 @@ func NewService(
 	adminkaName string,
 	werkaPhone string,
 	werkaName string,
+	werkaTelegramID int64,
 	envPersister EnvPersister,
 ) *Service {
 	uom := strings.TrimSpace(defaultUOM)
@@ -93,6 +110,7 @@ func NewService(
 		erp:                    erp,
 		admin:                  admin,
 		supplier:               supplier,
+		supplierAuth:           supplierAuth,
 		envPersister:           envPersister,
 		settingsPassword:       strings.TrimSpace(settingsPassword),
 		defaultTargetWarehouse: strings.TrimSpace(defaultTargetWarehouse),
@@ -105,6 +123,7 @@ func NewService(
 		adminkaName:            strings.TrimSpace(adminkaName),
 		werkaPhone:             normalizePhoneForMatch(werkaPhone),
 		werkaName:              strings.TrimSpace(werkaName),
+		werkaTelegramID:        werkaTelegramID,
 	}
 }
 
@@ -120,6 +139,34 @@ func (s *Service) FindSupplierByPhone(ctx context.Context, phone string) (suplie
 		return suplier.Supplier{}, false, fmt.Errorf("supplier service is not configured")
 	}
 	return s.supplier.FindByPhone(ctx, phone)
+}
+
+func (s *Service) ListSuppliers(ctx context.Context) ([]suplier.Supplier, error) {
+	if s.supplier == nil {
+		return nil, fmt.Errorf("supplier service is not configured")
+	}
+	return s.supplier.List(ctx)
+}
+
+func (s *Service) FindSupplierAuthByPhone(ctx context.Context, phone string) (suplier.SupplierAuth, bool, error) {
+	if s.supplierAuth == nil {
+		return suplier.SupplierAuth{}, false, fmt.Errorf("supplier auth service is not configured")
+	}
+	return s.supplierAuth.FindByPhone(ctx, phone)
+}
+
+func (s *Service) RegisterSupplierAuth(ctx context.Context, phone string, telegramUserID int64, password string) (suplier.SupplierAuth, error) {
+	if s.supplierAuth == nil {
+		return suplier.SupplierAuth{}, fmt.Errorf("supplier auth service is not configured")
+	}
+	return s.supplierAuth.Register(ctx, phone, telegramUserID, password)
+}
+
+func (s *Service) AuthenticateSupplier(ctx context.Context, phone string, telegramUserID int64, password string) (suplier.SupplierAuth, error) {
+	if s.supplierAuth == nil {
+		return suplier.SupplierAuth{}, fmt.Errorf("supplier auth service is not configured")
+	}
+	return s.supplierAuth.Authenticate(ctx, phone, telegramUserID, password)
 }
 
 func (s *Service) IsAdminConfigured() bool {
@@ -168,11 +215,26 @@ func (s *Service) SaveContact(kind ContactSetupKind, phone, name string) error {
 		s.mu.Lock()
 		s.werkaPhone = normalizedPhone
 		s.werkaName = normalizedName
+		s.werkaTelegramID = 0
 		s.mu.Unlock()
+		s.persistEnv(map[string]string{"WERKA_TELEGRAM_ID": ""})
 		return nil
 	default:
 		return fmt.Errorf("unknown contact setup kind: %s", kind)
 	}
+}
+
+func (s *Service) BindWerkaTelegramID(principalID int64) {
+	s.mu.Lock()
+	s.werkaTelegramID = principalID
+	s.mu.Unlock()
+	s.persistEnv(map[string]string{"WERKA_TELEGRAM_ID": fmt.Sprintf("%d", principalID)})
+}
+
+func (s *Service) WerkaTelegramID() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.werkaTelegramID
 }
 
 func (s *Service) MatchPrivilegedContact(phone string) (UserRole, string, bool) {

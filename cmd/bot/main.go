@@ -28,12 +28,14 @@ func main() {
 	envPersister := config.NewDotEnvPersister(".env")
 	adminService := admin.NewService(cfg.AdminPassword, envPersister)
 	supplierService := suplier.NewService(suplier.NewFileRepository("data/suppliers.fb"))
+	supplierAuthService := suplier.NewAuthService(suplier.NewAuthFileRepository("data/supplier_auth.fb"))
 	service := bot.NewService(
 		sessions,
 		credStore,
 		erpClient,
 		adminService,
 		supplierService,
+		supplierAuthService,
 		cfg.SettingsPassword,
 		cfg.DefaultTargetWarehouse,
 		cfg.DefaultSourceWarehouse,
@@ -45,6 +47,7 @@ func main() {
 		cfg.AdminkaName,
 		cfg.WerkaPhone,
 		cfg.WerkaName,
+		cfg.WerkaTelegramID,
 		envPersister,
 	)
 
