@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -138,7 +139,7 @@ func (c *Client) CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey
 		"company":                company,
 		"posting_date":           time.Now().Format("2006-01-02"),
 		"set_warehouse":          strings.TrimSpace(input.Warehouse),
-		"supplier_delivery_note": buildTelegramReceiptMarker(input.SupplierPhone, time.Now().UTC()),
+		"supplier_delivery_note": buildTelegramReceiptMarker(input.SupplierPhone, input.Qty, time.Now().UTC()),
 		"items": []map[string]interface{}{
 			{
 				"item_code":                 strings.TrimSpace(input.ItemCode),
@@ -582,12 +583,28 @@ func mapPurchaseReceiptDraft(doc map[string]interface{}) (PurchaseReceiptDraft, 
 	}, nil
 }
 
-func buildTelegramReceiptMarker(phone string, now time.Time) string {
+func buildTelegramReceiptMarker(phone string, qty float64, now time.Time) string {
 	normalizedPhone := strings.TrimSpace(phone)
 	if normalizedPhone == "" {
 		normalizedPhone = "unknown"
 	}
-	return telegramReceiptMarkerPrefix + normalizedPhone + ":" + now.Format("20060102150405")
+	return fmt.Sprintf("%s%s:%s:%.4f", telegramReceiptMarkerPrefix, normalizedPhone, now.Format("20060102150405"), qty)
+}
+
+func ParseTelegramReceiptMarkerQty(marker string) (float64, bool) {
+	trimmed := strings.TrimSpace(marker)
+	if !strings.HasPrefix(trimmed, telegramReceiptMarkerPrefix) {
+		return 0, false
+	}
+	parts := strings.Split(trimmed, ":")
+	if len(parts) < 4 {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(strings.TrimSpace(parts[len(parts)-1]), 64)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
 }
 
 func getStringValue(value interface{}) string {

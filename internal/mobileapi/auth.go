@@ -144,19 +144,18 @@ func (a *ERPAuthenticator) SupplierHistory(ctx context.Context, principal Princi
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
-		status := "pending"
-		acceptedQty := 0.0
-		if item.DocStatus == 1 {
-			status = "accepted"
-			acceptedQty = item.Qty
+		sentQty := item.Qty
+		if markerQty, ok := erpnext.ParseTelegramReceiptMarkerQty(item.SupplierDeliveryNote); ok && markerQty > sentQty {
+			sentQty = markerQty
 		}
+		status, acceptedQty := mapDispatchStatus(item, sentQty)
 		result = append(result, DispatchRecord{
 			ID:           item.Name,
 			SupplierName: principal.DisplayName,
 			ItemCode:     item.ItemCode,
 			ItemName:     item.ItemName,
 			UOM:          item.UOM,
-			SentQty:      item.Qty,
+			SentQty:      sentQty,
 			AcceptedQty:  acceptedQty,
 			Status:       status,
 			CreatedLabel: item.PostingDate,
@@ -173,13 +172,17 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
+		sentQty := item.Qty
+		if markerQty, ok := erpnext.ParseTelegramReceiptMarkerQty(item.SupplierDeliveryNote); ok && markerQty > sentQty {
+			sentQty = markerQty
+		}
 		result = append(result, DispatchRecord{
 			ID:           item.Name,
 			SupplierName: item.SupplierName,
 			ItemCode:     item.ItemCode,
 			ItemName:     item.ItemName,
 			UOM:          item.UOM,
-			SentQty:      item.Qty,
+			SentQty:      sentQty,
 			AcceptedQty:  0,
 			Status:       "pending",
 			CreatedLabel: item.PostingDate,
@@ -245,7 +248,7 @@ func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string,
 		UOM:          result.UOM,
 		SentQty:      result.SentQty,
 		AcceptedQty:  result.AcceptedQty,
-		Status:       "accepted",
+		Status:       dispatchStatusFromQuantities(result.SentQty, result.AcceptedQty),
 		CreatedLabel: result.Name,
 	}, nil
 }
@@ -292,4 +295,28 @@ func requireRole(principal Principal, role PrincipalRole) error {
 		return fmt.Errorf("role %s required", role)
 	}
 	return nil
+}
+
+func mapDispatchStatus(item erpnext.PurchaseReceiptDraft, sentQty float64) (string, float64) {
+	if item.DocStatus == 2 || strings.EqualFold(strings.TrimSpace(item.Status), "Cancelled") {
+		return "cancelled", 0
+	}
+	if item.DocStatus == 1 {
+		return dispatchStatusFromQuantities(sentQty, item.Qty), item.Qty
+	}
+	if strings.EqualFold(strings.TrimSpace(item.Status), "Draft") {
+		return "draft", 0
+	}
+	return "pending", 0
+}
+
+func dispatchStatusFromQuantities(sentQty, acceptedQty float64) string {
+	switch {
+	case acceptedQty <= 0:
+		return "rejected"
+	case sentQty > 0 && acceptedQty < sentQty:
+		return "partial"
+	default:
+		return "accepted"
+	}
 }
