@@ -101,10 +101,6 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 	}
 
 	if message.IsCommand() {
-		if session.AdminAuthed && !isAdminCommand(message.Command()) {
-			deleteMessageBestEffort(api, chatID, message.MessageID)
-			return ensureAdminPanelText(api, chatID, &session, service, principalID, adminOnlyCommandText(), tgbotapi.InlineKeyboardMarkup{})
-		}
 		interruptSessionMessages(api, chatID, session, message.Command())
 		session = resetSessionForCommand(session, message.Command())
 		service.sessions.Upsert(principalID, session)

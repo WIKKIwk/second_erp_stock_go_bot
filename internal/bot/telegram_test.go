@@ -1225,6 +1225,8 @@ func TestAdminPanelRejectsNonAdminCommandsWithoutLeavingSession(t *testing.T) {
 		switch endpoint {
 		case "getMe":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"bot","username":"bot"}}`))
+		case "sendMessage":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":701,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
 		case "editMessageText":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":700,"chat":{"id":123,"type":"private"},"date":1,"text":"ok"}}`))
 		case "deleteMessage":
@@ -1273,13 +1275,17 @@ func TestAdminPanelRejectsNonAdminCommandsWithoutLeavingSession(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	var edited bool
+	var loginPrompt bool
+	var adminWarning bool
 	for _, call := range calls {
+		if call.endpoint == "sendMessage" && call.form["text"] == "Iltimos, avval /login qiling." {
+			loginPrompt = true
+		}
 		if call.endpoint == "editMessageText" && call.form["text"] == adminOnlyCommandText() {
-			edited = true
+			adminWarning = true
 		}
 	}
-	if !edited {
-		t.Fatalf("expected admin-only warning to be shown, calls=%+v", calls)
+	if !loginPrompt || adminWarning {
+		t.Fatalf("expected normal command handling without admin warning, calls=%+v", calls)
 	}
 }

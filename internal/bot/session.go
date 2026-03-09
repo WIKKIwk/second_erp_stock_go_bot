@@ -201,17 +201,15 @@ func commandUsesAdminContext(command string) bool {
 
 func resetSessionForCommand(session LoginSession, command string) LoginSession {
 	cleaned := LoginSession{
-		UserRole:  session.UserRole,
-		UserName:  session.UserName,
-		UserPhone: session.UserPhone,
+		UserRole:     session.UserRole,
+		UserName:     session.UserName,
+		UserPhone:    session.UserPhone,
+		AdminAuthed:  session.AdminAuthed,
+		AdminPanelID: session.AdminPanelID,
 	}
 	if commandUsesSettingsContext(command) {
 		cleaned.SettingsAuthed = session.SettingsAuthed
 		cleaned.SettingsPanelID = session.SettingsPanelID
-	}
-	if commandUsesAdminContext(command) {
-		cleaned.AdminAuthed = session.AdminAuthed
-		cleaned.AdminPanelID = session.AdminPanelID
 	}
 	return cleaned
 }

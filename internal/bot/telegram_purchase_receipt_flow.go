@@ -11,7 +11,7 @@ import (
 )
 
 func beginSupplierDispatch(api *tgbotapi.BotAPI, service *Service, chatID, principalID int64, session LoginSession) error {
-	if session.UserRole != UserRoleSupplier {
+	if session.UserRole != UserRoleSupplier && session.UserRole != UserRoleAdmin && !session.AdminAuthed {
 		if _, err := sendTextMessage(api, chatID, "Bu buyruq faqat supplier uchun."); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
