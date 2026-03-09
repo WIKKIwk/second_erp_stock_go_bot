@@ -35,7 +35,17 @@ func (r *FileRepository) Add(_ context.Context, supplier Supplier) error {
 	if err != nil {
 		return err
 	}
-	suppliers = append(suppliers, supplier)
+	replaced := false
+	for i := range suppliers {
+		if suppliers[i].Phone == supplier.Phone {
+			suppliers[i] = supplier
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		suppliers = append(suppliers, supplier)
+	}
 	return r.writeAllLocked(suppliers)
 }
 

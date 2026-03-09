@@ -39,11 +39,11 @@ func (s *Service) Add(ctx context.Context, name, phone string) (Supplier, error)
 		return Supplier{}, err
 	}
 	for _, item := range existing {
+		if strings.EqualFold(strings.TrimSpace(item.Phone), normalizedPhone) {
+			continue
+		}
 		if strings.EqualFold(strings.TrimSpace(item.Name), normalizedName) {
 			return Supplier{}, fmt.Errorf("Supplier nomi allaqachon mavjud")
-		}
-		if strings.EqualFold(strings.TrimSpace(item.Phone), normalizedPhone) {
-			return Supplier{}, fmt.Errorf("Supplier telefon raqami allaqachon mavjud")
 		}
 	}
 

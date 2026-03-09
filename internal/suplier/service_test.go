@@ -10,6 +10,12 @@ type fakeRepository struct {
 }
 
 func (f *fakeRepository) Add(_ context.Context, supplier Supplier) error {
+	for i := range f.items {
+		if f.items[i].Phone == supplier.Phone {
+			f.items[i] = supplier
+			return nil
+		}
+	}
 	f.items = append(f.items, supplier)
 	return nil
 }
@@ -70,5 +76,23 @@ func TestServiceAddRejectsDuplicateName(t *testing.T) {
 	_, err := service.Add(context.Background(), "Ali", "998901111111")
 	if err == nil {
 		t.Fatal("expected duplicate name error")
+	}
+}
+
+func TestServiceAddUpdatesExistingPhoneRecord(t *testing.T) {
+	repository := &fakeRepository{
+		items: []Supplier{{Name: "Stock", Phone: "+998901234567"}},
+	}
+	service := NewService(repository)
+
+	supplier, err := service.Add(context.Background(), "Stocker", "998901234567")
+	if err != nil {
+		t.Fatalf("Add returned error: %v", err)
+	}
+	if supplier.Name != "Stocker" {
+		t.Fatalf("unexpected supplier: %+v", supplier)
+	}
+	if len(repository.items) != 1 || repository.items[0].Name != "Stocker" {
+		t.Fatalf("expected phone match to update existing record, got %+v", repository.items)
 	}
 }

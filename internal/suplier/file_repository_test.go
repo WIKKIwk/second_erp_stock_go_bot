@@ -59,6 +59,25 @@ func TestFileRepositoryFindByPhoneUsesSortedBinarySearchData(t *testing.T) {
 	}
 }
 
+func TestFileRepositoryAddUpdatesExistingPhone(t *testing.T) {
+	repository := NewFileRepository(filepath.Join(t.TempDir(), "suppliers.fb"))
+
+	if err := repository.Add(context.Background(), Supplier{Name: "Stock", Phone: "+998901234567"}); err != nil {
+		t.Fatalf("Add returned error: %v", err)
+	}
+	if err := repository.Add(context.Background(), Supplier{Name: "Stocker", Phone: "+998901234567"}); err != nil {
+		t.Fatalf("Add returned error: %v", err)
+	}
+
+	items, err := repository.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "Stocker" {
+		t.Fatalf("expected existing phone to be updated, got %+v", items)
+	}
+}
+
 func TestFileRepositoryConcurrentProcesses(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "suppliers.fb")
 	processes := 6
