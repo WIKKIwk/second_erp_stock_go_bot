@@ -312,11 +312,8 @@ func notifySupplierAboutReceipt(ctx context.Context, api *tgbotapi.BotAPI, servi
 		return
 	}
 
-	auth, found, err := service.FindSupplierAuthByPhone(ctx, phone)
-	if err != nil || !found || auth.TelegramUserID == 0 {
-		if err != nil {
-			log.Printf("failed to lookup supplier auth for notification: phone=%s err=%v", phone, err)
-		}
+	chatID, found := service.FindSupplierChatIDByPhone(phone)
+	if !found || chatID == 0 {
 		return
 	}
 
@@ -329,7 +326,7 @@ func notifySupplierAboutReceipt(ctx context.Context, api *tgbotapi.BotAPI, servi
 		result.AcceptedQty,
 		result.UOM,
 	)
-	if _, err := sendTextMessage(api, auth.TelegramUserID, text); err != nil {
+	if _, err := sendTextMessage(api, chatID, text); err != nil {
 		log.Printf("failed to notify supplier about receipt %s: %v", result.Name, err)
 	}
 }

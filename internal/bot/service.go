@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -136,22 +137,24 @@ func (s *Service) AddSupplier(ctx context.Context, name, phone string) (suplier.
 }
 
 func (s *Service) AddSupplierWithERP(ctx context.Context, principalID int64, name, phone string) (suplier.Supplier, error) {
-	if !s.EnsureCredentials(principalID) {
-		return suplier.Supplier{}, fmt.Errorf("Iltimos, avval /login qiling.")
-	}
-	creds, ok := s.creds.Get(principalID)
+	baseURL, apiKey, apiSecret, ok := s.erpCredentials(principalID)
 	if !ok {
 		return suplier.Supplier{}, fmt.Errorf("Iltimos, avval /login qiling.")
 	}
 
-	if _, err := s.erp.EnsureSupplier(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, erpnext.CreateSupplierInput{
+	created, err := s.erp.EnsureSupplier(ctx, baseURL, apiKey, apiSecret, erpnext.CreateSupplierInput{
 		Name:  name,
 		Phone: phone,
-	}); err != nil {
+	})
+	if err != nil {
 		return suplier.Supplier{}, err
 	}
 
-	return s.AddSupplier(ctx, name, phone)
+	return suplier.Supplier{
+		Ref:   created.ID,
+		Name:  created.Name,
+		Phone: created.Phone,
+	}, nil
 }
 
 func (s *Service) FindSupplierByPhone(ctx context.Context, principalID int64, phone string) (suplier.Supplier, bool, error) {
@@ -160,22 +163,9 @@ func (s *Service) FindSupplierByPhone(ctx context.Context, principalID int64, ph
 		return suplier.Supplier{}, false, err
 	}
 
-	if s.supplier != nil {
-		supplier, found, err := s.supplier.FindByPhone(ctx, normalizedPhone)
-		if err != nil {
-			return suplier.Supplier{}, false, err
-		}
-		if found {
-			return supplier, true, nil
-		}
-	}
-
 	baseURL, apiKey, apiSecret, ok := s.erpCredentials(principalID)
 	if !ok || s.erp == nil {
-		if s.supplier == nil {
-			return suplier.Supplier{}, false, fmt.Errorf("supplier service is not configured")
-		}
-		return suplier.Supplier{}, false, nil
+		return suplier.Supplier{}, false, fmt.Errorf("Iltimos, avval /login qiling.")
 	}
 
 	items, err := s.erp.SearchSuppliers(ctx, baseURL, apiKey, apiSecret, normalizedPhone, 20)
@@ -190,11 +180,6 @@ func (s *Service) FindSupplierByPhone(ctx context.Context, principalID int64, ph
 			Ref:   item.ID,
 			Name:  item.Name,
 			Phone: item.Phone,
-		}
-		if s.supplier != nil {
-			if _, addErr := s.supplier.Add(ctx, found.Name, found.Phone); addErr != nil && !strings.Contains(strings.ToLower(addErr.Error()), "nomi allaqachon mavjud") {
-				log.Printf("supplier sync add failed for %s: %v", found.Phone, addErr)
-			}
 		}
 		return found, true, nil
 	}
@@ -214,10 +199,26 @@ func (s *Service) erpCredentials(principalID int64) (string, string, string, boo
 }
 
 func (s *Service) ListSuppliers(ctx context.Context) ([]suplier.Supplier, error) {
-	if s.supplier == nil {
-		return nil, fmt.Errorf("supplier service is not configured")
+	baseURL, apiKey, apiSecret, ok := s.erpCredentials(0)
+	if !ok || s.erp == nil {
+		return nil, fmt.Errorf("Iltimos, avval /login qiling.")
 	}
-	return s.supplier.List(ctx)
+	rows, err := s.erp.SearchSuppliers(ctx, baseURL, apiKey, apiSecret, "", 100)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]suplier.Supplier, 0, len(rows))
+	for _, item := range rows {
+		items = append(items, suplier.Supplier{
+			Ref:   item.ID,
+			Name:  item.Name,
+			Phone: item.Phone,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+	})
+	return items, nil
 }
 
 func (s *Service) FindSupplierAuthByPhone(ctx context.Context, phone string) (suplier.SupplierAuth, bool, error) {
@@ -239,6 +240,25 @@ func (s *Service) AuthenticateSupplier(ctx context.Context, phone string, telegr
 		return suplier.SupplierAuth{}, fmt.Errorf("supplier auth service is not configured")
 	}
 	return s.supplierAuth.Authenticate(ctx, phone, telegramUserID, password)
+}
+
+func (s *Service) FindSupplierChatIDByPhone(phone string) (int64, bool) {
+	normalized := normalizePhoneForMatch(phone)
+	if normalized == "" {
+		return 0, false
+	}
+
+	s.sessions.mu.RLock()
+	defer s.sessions.mu.RUnlock()
+	for principalID, session := range s.sessions.sessions {
+		if session.UserRole != UserRoleSupplier {
+			continue
+		}
+		if normalizePhoneForMatch(session.UserPhone) == normalized {
+			return principalID, true
+		}
+	}
+	return 0, false
 }
 
 func (s *Service) IsAdminConfigured() bool {

@@ -27,12 +27,6 @@ func handleSharedContact(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		return nil
 	}
 
-	supplier, found, err := service.FindSupplierByPhone(ctx, principalID, phone)
-	if err != nil && !strings.Contains(err.Error(), "supplier service is not configured") {
-		return fmt.Errorf("supplier lookup failed: %w", err)
-	}
-	log.Printf("supplier contact lookup phone=%s found=%v role=%s", phone, found, session.UserRole)
-
 	if role, name, ok := service.MatchPrivilegedContact(phone); ok {
 		session.UserRole = role
 		session.UserName = name
@@ -56,6 +50,12 @@ func handleSharedContact(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		return nil
 	}
 
+	supplier, found, err := service.FindSupplierByPhone(ctx, principalID, phone)
+	if err != nil {
+		return fmt.Errorf("supplier lookup failed: %w", err)
+	}
+	log.Printf("supplier contact lookup phone=%s found=%v role=%s", phone, found, session.UserRole)
+
 	if !found {
 		if _, err := sendTextMessageWithReplyMarkup(api, chatID, "Telefon raqamingiz tizimda topilmadi.", removeKeyboard()); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
@@ -63,19 +63,9 @@ func handleSharedContact(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		return nil
 	}
 
-	_, authFound, err := service.FindSupplierAuthByPhone(ctx, phone)
-	if err != nil {
-		return fmt.Errorf("supplier auth lookup failed: %w", err)
-	}
-
 	promptText := "Telefon topildi. Ismingizni kiriting:"
 	session.SupplierAuthMode = SupplierAuthModeRegister
 	session.SupplierAuthStep = SupplierAuthStepAwaitingName
-	if authFound {
-		promptText = "Telefon topildi. Parolingizni kiriting:"
-		session.SupplierAuthMode = SupplierAuthModeLogin
-		session.SupplierAuthStep = SupplierAuthStepAwaitingPassword
-	}
 
 	promptID, err := sendTextMessageWithReplyMarkup(api, chatID, promptText, removeKeyboard())
 	if err != nil {
@@ -553,50 +543,25 @@ func handleInlineQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Servi
 		query := strings.ToLower(normalizeInlineQuery(q.Query, "sup"))
 		results := make([]interface{}, 0, 20)
 
-		if service.EnsureCredentials(principalID) {
-			creds, _ := service.creds.Get(principalID)
-			erpSuppliers, err := service.erp.SearchSuppliers(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, query, 20)
-			if err != nil {
-				return fmt.Errorf("erp supplier search failed: %w", err)
-			}
-			for _, supplier := range erpSuppliers {
-				article := tgbotapi.NewInlineQueryResultArticle(
-					supplier.Name,
-					supplier.Name,
-					inlineSupplierPrefix+supplier.Name,
-				)
-				article.Description = strings.TrimSpace(supplier.Phone)
-				if article.Description == "" {
-					article.Description = "Mobile No yo'q"
-				}
-				results = append(results, article)
-			}
+		baseURL, apiKey, apiSecret, ok := service.erpCredentials(principalID)
+		if !ok {
+			return answerEmptyInline(api, q.ID)
 		}
-
-		if len(results) == 0 {
-			suppliers, err := service.ListSuppliers(ctx)
-			if err != nil {
-				return fmt.Errorf("supplier list failed: %w", err)
+		erpSuppliers, err := service.erp.SearchSuppliers(ctx, baseURL, apiKey, apiSecret, query, 20)
+		if err != nil {
+			return fmt.Errorf("erp supplier search failed: %w", err)
+		}
+		for _, supplier := range erpSuppliers {
+			article := tgbotapi.NewInlineQueryResultArticle(
+				supplier.Name,
+				supplier.Name,
+				inlineSupplierPrefix+supplier.Name,
+			)
+			article.Description = strings.TrimSpace(supplier.Phone)
+			if article.Description == "" {
+				article.Description = "Mobile No yo'q"
 			}
-			for _, supplier := range suppliers {
-				if query != "" {
-					nameMatch := strings.Contains(strings.ToLower(strings.TrimSpace(supplier.Name)), query)
-					phoneMatch := strings.Contains(strings.ToLower(strings.TrimSpace(supplier.Phone)), query)
-					if !nameMatch && !phoneMatch {
-						continue
-					}
-				}
-				article := tgbotapi.NewInlineQueryResultArticle(
-					supplier.Name,
-					supplier.Name,
-					inlineSupplierPrefix+supplier.Name,
-				)
-				article.Description = supplier.Phone
-				results = append(results, article)
-				if len(results) >= 20 {
-					break
-				}
-			}
+			results = append(results, article)
 		}
 		return answerInline(api, q.ID, results)
 	}

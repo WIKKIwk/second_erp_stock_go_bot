@@ -258,10 +258,7 @@ func TestHandleIncomingMessageSharedContactAuthenticatesAdminDirectly(t *testing
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	supplierManager := &fakeSupplierManager{
-		items: []suplier.Supplier{{Name: "Ali", Phone: "+998901234567"}},
-	}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, nil, "secret", "", "", "Kg", "", "", "", "+998 90 123 45 67", "Aziza", "", "", 0, nil)
+	service := NewService(sessions, creds, &fakeERP{}, nil, nil, nil, "secret", "", "", "Kg", "", "", "", "+998 90 123 45 67", "Aziza", "", "", 0, nil)
 
 	message := &tgbotapi.Message{
 		MessageID: 2,
@@ -360,10 +357,10 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	supplierManager := &fakeSupplierManager{
-		items: []suplier.Supplier{{Name: "Abdulloh", Phone: "+998901234567"}},
-	}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, &fakeSupplierAuthManager{}, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
+	creds.Save(123, store.Credentials{BaseURL: "https://erp.example.com", APIKey: "key", APISecret: "secret"})
+	service := NewService(sessions, creds, &fakeERP{
+		suppliers: []erpnext.Supplier{{ID: "SUP-001", Name: "Abdulloh", Phone: "+998901234567"}},
+	}, nil, nil, nil, "secret", "", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
 
 	contactMessage := &tgbotapi.Message{
 		MessageID: 3,
@@ -377,7 +374,7 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 
 	nameMessage := &tgbotapi.Message{
 		MessageID: 4,
-		Text:      "Abdullox",
+		Text:      "Sardor",
 		Chat:      &tgbotapi.Chat{ID: 123},
 		From:      &tgbotapi.User{ID: 123},
 	}
@@ -385,24 +382,14 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 		t.Fatalf("handleIncomingMessage(name) returned error: %v", err)
 	}
 
-	weakPassword := &tgbotapi.Message{
+	rightName := &tgbotapi.Message{
 		MessageID: 5,
-		Text:      "abcdefg",
+		Text:      "Abdullox",
 		Chat:      &tgbotapi.Chat{ID: 123},
 		From:      &tgbotapi.User{ID: 123},
 	}
-	if err := handleIncomingMessage(context.Background(), api, service, weakPassword); err != nil {
-		t.Fatalf("handleIncomingMessage(weakPassword) returned error: %v", err)
-	}
-
-	strongPassword := &tgbotapi.Message{
-		MessageID: 6,
-		Text:      "abc12345",
-		Chat:      &tgbotapi.Chat{ID: 123},
-		From:      &tgbotapi.User{ID: 123},
-	}
-	if err := handleIncomingMessage(context.Background(), api, service, strongPassword); err != nil {
-		t.Fatalf("handleIncomingMessage(strongPassword) returned error: %v", err)
+	if err := handleIncomingMessage(context.Background(), api, service, rightName); err != nil {
+		t.Fatalf("handleIncomingMessage(rightName) returned error: %v", err)
 	}
 
 	session, ok := sessions.Get(123)
@@ -419,24 +406,21 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	var askName bool
-	var askPassword bool
-	var weakPasswordEdit bool
+	var wrongNameEdit bool
 	var success bool
 	for _, call := range calls {
 		switch {
 		case call.endpoint == "sendMessage" && call.form["text"] == "Telefon topildi. Ismingizni kiriting:":
 			askName = true
-		case call.endpoint == "sendMessage" && strings.Contains(call.form["text"], "Yangi kuchli parol qo'ying"):
-			askPassword = true
-		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Parol kamida 8 belgidan iborat bo'lishi kerak"):
-			weakPasswordEdit = true
+		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Ism mos kelmadi"):
+			wrongNameEdit = true
 		case call.endpoint == "sendMessage" &&
-			strings.Contains(call.form["text"], "Ro'yxatdan o'tish yakunlandi. Siz supplier sifatida kirdingiz.") &&
+			strings.Contains(call.form["text"], "Kirish muvaffaqiyatli. Siz supplier sifatida kirdingiz.") &&
 			strings.Contains(call.form["text"], "/dispatch - jo'natilgan mahsulotni bildirish"):
 			success = true
 		}
 	}
-	if !askName || !askPassword || !weakPasswordEdit || !success {
+	if !askName || !wrongNameEdit || !success {
 		t.Fatalf("unexpected call set: %+v", calls)
 	}
 }
@@ -493,18 +477,10 @@ func TestHandleIncomingMessageSharedContactSupplierRepeatLoginFlow(t *testing.T)
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	supplierManager := &fakeSupplierManager{
-		items: []suplier.Supplier{{Name: "Abdulloh", Phone: "+998901234567"}},
-	}
-	authManager := &fakeSupplierAuthManager{
-		items: map[string]suplier.SupplierAuth{
-			"+998901234567": {Phone: "+998901234567", TelegramUserID: 123, PasswordHash: "hashed:abc12345"},
-		},
-		passwords: map[string]string{
-			"+998901234567": "abc12345",
-		},
-	}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, authManager, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
+	creds.Save(123, store.Credentials{BaseURL: "https://erp.example.com", APIKey: "key", APISecret: "secret"})
+	service := NewService(sessions, creds, &fakeERP{
+		suppliers: []erpnext.Supplier{{ID: "SUP-001", Name: "Abdulloh", Phone: "+998901234567"}},
+	}, nil, nil, nil, "secret", "", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
 
 	contactMessage := &tgbotapi.Message{
 		MessageID: 7,
@@ -516,24 +492,14 @@ func TestHandleIncomingMessageSharedContactSupplierRepeatLoginFlow(t *testing.T)
 		t.Fatalf("handleIncomingMessage(contact) returned error: %v", err)
 	}
 
-	wrongPassword := &tgbotapi.Message{
+	rightName := &tgbotapi.Message{
 		MessageID: 8,
-		Text:      "wrong",
+		Text:      "Abdulloh",
 		Chat:      &tgbotapi.Chat{ID: 123},
 		From:      &tgbotapi.User{ID: 123},
 	}
-	if err := handleIncomingMessage(context.Background(), api, service, wrongPassword); err != nil {
-		t.Fatalf("handleIncomingMessage(wrongPassword) returned error: %v", err)
-	}
-
-	rightPassword := &tgbotapi.Message{
-		MessageID: 9,
-		Text:      "abc12345",
-		Chat:      &tgbotapi.Chat{ID: 123},
-		From:      &tgbotapi.User{ID: 123},
-	}
-	if err := handleIncomingMessage(context.Background(), api, service, rightPassword); err != nil {
-		t.Fatalf("handleIncomingMessage(rightPassword) returned error: %v", err)
+	if err := handleIncomingMessage(context.Background(), api, service, rightName); err != nil {
+		t.Fatalf("handleIncomingMessage(rightName) returned error: %v", err)
 	}
 
 	session, ok := sessions.Get(123)
@@ -549,22 +515,19 @@ func TestHandleIncomingMessageSharedContactSupplierRepeatLoginFlow(t *testing.T)
 
 	mu.Lock()
 	defer mu.Unlock()
-	var askPassword bool
-	var wrongPasswordEdit bool
+	var askName bool
 	var success bool
 	for _, call := range calls {
 		switch {
-		case call.endpoint == "sendMessage" && call.form["text"] == "Telefon topildi. Parolingizni kiriting:":
-			askPassword = true
-		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Parol noto'g'ri"):
-			wrongPasswordEdit = true
+		case call.endpoint == "sendMessage" && call.form["text"] == "Telefon topildi. Ismingizni kiriting:":
+			askName = true
 		case call.endpoint == "sendMessage" &&
 			strings.Contains(call.form["text"], "Kirish muvaffaqiyatli. Siz supplier sifatida kirdingiz.") &&
 			strings.Contains(call.form["text"], "/dispatch - jo'natilgan mahsulotni bildirish"):
 			success = true
 		}
 	}
-	if !askPassword || !wrongPasswordEdit || !success {
+	if !askName || !success {
 		t.Fatalf("unexpected call set: %+v", calls)
 	}
 }
@@ -789,16 +752,11 @@ func TestWerkaBildirishnomaFlowSubmitsPurchaseReceiptAndNotifiesSupplier(t *test
 		},
 	}
 
-	authManager := &fakeSupplierAuthManager{
-		items: map[string]suplier.SupplierAuth{
-			"+998901234567": {Phone: "+998901234567", TelegramUserID: 555},
-		},
-	}
-
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	service := NewService(sessions, creds, fakeERP, nil, nil, authManager, "secret", "Stores - CH", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
+	service := NewService(sessions, creds, fakeERP, nil, nil, nil, "secret", "Stores - CH", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
 	sessions.Upsert(321, LoginSession{UserRole: UserRoleWerka})
+	sessions.Upsert(555, LoginSession{UserRole: UserRoleSupplier, UserPhone: "+998901234567"})
 
 	command := &tgbotapi.Message{
 		MessageID: 20,
@@ -1065,9 +1023,8 @@ func TestSupplierFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
-	supplierManager := &fakeSupplierManager{}
 	erp := &fakeERP{}
-	service := NewService(sessions, creds, erp, nil, supplierManager, nil, "secret", "", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
+	service := NewService(sessions, creds, erp, nil, nil, nil, "secret", "", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
 
 	adminSession := LoginSession{AdminAuthed: true}
 	commandMessage := &tgbotapi.Message{
@@ -1102,9 +1059,6 @@ func TestSupplierFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 		t.Fatalf("handleIncomingMessage(phone) returned error: %v", err)
 	}
 
-	if len(supplierManager.added) != 1 {
-		t.Fatalf("expected supplier to be added, got %+v", supplierManager.added)
-	}
 	if erp.ensureSupplierIn.Name != "Ali" || erp.ensureSupplierIn.Phone != "+998901234567" {
 		t.Fatalf("expected ERP supplier sync, got %+v", erp.ensureSupplierIn)
 	}

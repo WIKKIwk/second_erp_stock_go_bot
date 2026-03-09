@@ -199,62 +199,13 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 				return nil
 			}
 
-			session.SupplierAuthInputMsgID = message.MessageID
-			session.SupplierAuthMode = SupplierAuthModeRegister
-			session.SupplierAuthStep = SupplierAuthStepAwaitingPassword
+			deleteMessageBestEffort(api, chatID, message.MessageID)
 			if session.SupplierAuthPromptMsgID > 0 {
 				deleteMessageBestEffort(api, chatID, session.SupplierAuthPromptMsgID)
 			}
-			promptID, err := sendTextMessage(api, chatID, "Siz supplier sifatida ro'yxatdan o'tyapsiz.\nYangi kuchli parol qo'ying: harf va son aralash bo'lsin.")
-			if err != nil {
-				return fmt.Errorf("telegram send failed: %w", err)
-			}
-			session.SupplierAuthPromptMsgID = promptID
-			service.sessions.Upsert(principalID, session)
-			log.Printf("supplier name verified for principal=%d phone=%s; awaiting password", principalID, session.SupplierAuthPhone)
-			return nil
-
-		case SupplierAuthStepAwaitingPassword:
-			deleteMessageBestEffort(api, chatID, message.MessageID)
-
-			successText := "Kirish muvaffaqiyatli. Siz supplier sifatida kirdingiz."
-			switch session.SupplierAuthMode {
-			case SupplierAuthModeRegister:
-				if err := validateStrongPassword(message.Text); err != nil {
-					if session.SupplierAuthPromptMsgID > 0 {
-						_ = editMessageText(api, chatID, session.SupplierAuthPromptMsgID, err.Error()+"\nQayta kiriting.")
-					}
-					return nil
-				}
-				if _, err := service.RegisterSupplierAuth(ctx, session.SupplierAuthPhone, principalID, message.Text); err != nil {
-					if session.SupplierAuthPromptMsgID > 0 {
-						_ = editMessageText(api, chatID, session.SupplierAuthPromptMsgID, userFacingSupplierAuthError(err))
-					}
-					return nil
-				}
-				successText = "Ro'yxatdan o'tish yakunlandi. Siz supplier sifatida kirdingiz."
-			case SupplierAuthModeLogin:
-				if _, err := service.AuthenticateSupplier(ctx, session.SupplierAuthPhone, principalID, message.Text); err != nil {
-					if session.SupplierAuthPromptMsgID > 0 {
-						_ = editMessageText(api, chatID, session.SupplierAuthPromptMsgID, userFacingSupplierAuthError(err))
-					}
-					return nil
-				}
-			default:
-				if session.SupplierAuthPromptMsgID > 0 {
-					_ = editMessageText(api, chatID, session.SupplierAuthPromptMsgID, "Supplier auth holati topilmadi. /start ni qayta yuboring.")
-				}
-				return nil
-			}
-
 			session.UserRole = UserRoleSupplier
 			session.UserName = session.SupplierAuthName
 			session.UserPhone = session.SupplierAuthPhone
-			session.SupplierAuthInputMsgID = message.MessageID
-			if session.SupplierAuthPromptMsgID > 0 {
-				deleteMessageBestEffort(api, chatID, session.SupplierAuthPromptMsgID)
-			}
-			deleteMessageBestEffort(api, chatID, session.SupplierAuthInputMsgID)
 			session.SupplierAuthMode = SupplierAuthModeNone
 			session.SupplierAuthStep = SupplierAuthStepNone
 			session.SupplierAuthName = ""
@@ -262,7 +213,8 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			session.SupplierAuthPromptMsgID = 0
 			session.SupplierAuthInputMsgID = 0
 			service.sessions.Upsert(principalID, session)
-			successText = successText + "\n\n" + authenticatedStartText(session)
+			log.Printf("supplier login completed via ERP match for principal=%d phone=%s", principalID, session.UserPhone)
+			successText := "Kirish muvaffaqiyatli. Siz supplier sifatida kirdingiz.\n\n" + authenticatedStartText(session)
 			if _, err := sendTextMessageWithReplyMarkup(api, chatID, successText, removeKeyboard()); err != nil {
 				return fmt.Errorf("telegram send failed: %w", err)
 			}
@@ -326,44 +278,19 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return ensureAdminPanelText(api, chatID, &session, service, principalID, "Iltimos, supplierni inline menyudan tanlang.", supplierPickerKeyboard())
 		}
 
-		var supplier suplier.Supplier
-		var found bool
-
-		suppliers, err := service.ListSuppliers(ctx)
-		if err != nil && !strings.Contains(err.Error(), "supplier service is not configured") {
-			return fmt.Errorf("supplier list failed: %w", err)
+		baseURL, apiKey, apiSecret, ok := service.erpCredentials(principalID)
+		if !ok {
+			return ensureAdminPanelText(api, chatID, &session, service, principalID, "Iltimos, avval /login qiling.", tgbotapi.InlineKeyboardMarkup{})
 		}
-		for _, item := range suppliers {
-			if strings.EqualFold(strings.TrimSpace(item.Phone), strings.TrimSpace(selected)) ||
-				strings.EqualFold(strings.TrimSpace(item.Name), strings.TrimSpace(selected)) {
-				supplier = item
-				found = true
-				break
-			}
+		erpSuppliers, err := service.erp.SearchSuppliers(ctx, baseURL, apiKey, apiSecret, selected, 5)
+		if err != nil {
+			return fmt.Errorf("erp supplier search failed: %w", err)
 		}
-
-		if !found && service.EnsureCredentials(principalID) {
-			creds, _ := service.creds.Get(principalID)
-			erpSuppliers, err := service.erp.SearchSuppliers(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, selected, 5)
-			if err != nil {
-				return fmt.Errorf("erp supplier search failed: %w", err)
-			}
-			for _, item := range erpSuppliers {
-				if strings.EqualFold(strings.TrimSpace(item.Name), strings.TrimSpace(selected)) {
-					supplier = suplier.Supplier{Ref: item.ID, Name: item.Name, Phone: item.Phone}
-					found = true
-					break
-				}
-			}
-			if !found && len(erpSuppliers) > 0 {
-				supplier = suplier.Supplier{Ref: erpSuppliers[0].ID, Name: erpSuppliers[0].Name, Phone: erpSuppliers[0].Phone}
-				found = true
-			}
-		}
-
-		if !found {
+		if len(erpSuppliers) == 0 {
 			return ensureAdminPanelText(api, chatID, &session, service, principalID, "Supplier topilmadi. Qayta tanlang.", supplierPickerKeyboard())
 		}
+		first := erpSuppliers[0]
+		supplier := suplier.Supplier{Ref: first.ID, Name: first.Name, Phone: first.Phone}
 
 		accessMessage, err := suplier.SupplierAccessMessage(supplier)
 		if err != nil {
