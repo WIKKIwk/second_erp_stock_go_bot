@@ -59,10 +59,9 @@ func SupplierAccessMessage(supplier Supplier) (string, error) {
 	}
 
 	return fmt.Sprintf(
-		"Supplier: %s\nTelefon: %s\nCode: %s\nSecret: %s",
+		"Supplier: %s\nTelefon: %s\nCode: %s",
 		supplier.Name,
 		strings.TrimSpace(supplier.Phone),
 		creds.Code,
-		creds.Secret,
 	), nil
 }

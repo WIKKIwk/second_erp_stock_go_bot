@@ -1,6 +1,9 @@
 package suplier
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGenerateAccessCredentialsIsDeterministic(t *testing.T) {
 	supplier := Supplier{Name: "Ali", Phone: "+998901234567"}
@@ -22,5 +25,20 @@ func TestGenerateAccessCredentialsIsDeterministic(t *testing.T) {
 	}
 	if len(first.Secret) != 12 {
 		t.Fatalf("expected 12-char secret, got %q", first.Secret)
+	}
+}
+
+func TestSupplierAccessMessageOmitsSecret(t *testing.T) {
+	supplier := Supplier{Name: "Ali", Phone: "+998901234567"}
+
+	message, err := SupplierAccessMessage(supplier)
+	if err != nil {
+		t.Fatalf("SupplierAccessMessage returned error: %v", err)
+	}
+	if message == "" {
+		t.Fatal("expected non-empty message")
+	}
+	if strings.Contains(message, "Secret:") {
+		t.Fatalf("expected secret to be omitted, got %q", message)
 	}
 }

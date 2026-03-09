@@ -359,7 +359,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return ensureAdminPanelText(api, chatID, &session, service, principalID, "Supplier topilmadi. Qayta tanlang.", supplierPickerKeyboard())
 		}
 
-		creds, err := suplier.GenerateAccessCredentials(supplier)
+		accessMessage, err := suplier.SupplierAccessMessage(supplier)
 		if err != nil {
 			return fmt.Errorf("supplier access code generation failed: %w", err)
 		}
@@ -370,13 +370,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		if _, err := sendHTMLMessage(
 			api,
 			chatID,
-			fmt.Sprintf(
-				"Supplier: %s\nTelefon: %s\nCode: <code>%s</code>\nSecret: <code>%s</code>",
-				supplier.Name,
-				supplier.Phone,
-				creds.Code,
-				creds.Secret,
-			),
+			strings.Replace(accessMessage, "Code: ", "Code: <code>", 1)+"</code>",
 		); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
