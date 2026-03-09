@@ -154,11 +154,63 @@ func (s *Service) AddSupplierWithERP(ctx context.Context, principalID int64, nam
 	return s.AddSupplier(ctx, name, phone)
 }
 
-func (s *Service) FindSupplierByPhone(ctx context.Context, phone string) (suplier.Supplier, bool, error) {
-	if s.supplier == nil {
-		return suplier.Supplier{}, false, fmt.Errorf("supplier service is not configured")
+func (s *Service) FindSupplierByPhone(ctx context.Context, principalID int64, phone string) (suplier.Supplier, bool, error) {
+	normalizedPhone, err := suplier.NormalizePhone(phone)
+	if err != nil {
+		return suplier.Supplier{}, false, err
 	}
-	return s.supplier.FindByPhone(ctx, phone)
+
+	if s.supplier != nil {
+		supplier, found, err := s.supplier.FindByPhone(ctx, normalizedPhone)
+		if err != nil {
+			return suplier.Supplier{}, false, err
+		}
+		if found {
+			return supplier, true, nil
+		}
+	}
+
+	baseURL, apiKey, apiSecret, ok := s.erpCredentials(principalID)
+	if !ok || s.erp == nil {
+		if s.supplier == nil {
+			return suplier.Supplier{}, false, fmt.Errorf("supplier service is not configured")
+		}
+		return suplier.Supplier{}, false, nil
+	}
+
+	items, err := s.erp.SearchSuppliers(ctx, baseURL, apiKey, apiSecret, normalizedPhone, 20)
+	if err != nil {
+		return suplier.Supplier{}, false, err
+	}
+	for _, item := range items {
+		if !strings.EqualFold(strings.TrimSpace(item.Phone), normalizedPhone) {
+			continue
+		}
+		found := suplier.Supplier{
+			Ref:   item.ID,
+			Name:  item.Name,
+			Phone: item.Phone,
+		}
+		if s.supplier != nil {
+			if _, addErr := s.supplier.Add(ctx, found.Name, found.Phone); addErr != nil && !strings.Contains(strings.ToLower(addErr.Error()), "nomi allaqachon mavjud") {
+				log.Printf("supplier sync add failed for %s: %v", found.Phone, addErr)
+			}
+		}
+		return found, true, nil
+	}
+	return suplier.Supplier{}, false, nil
+}
+
+func (s *Service) erpCredentials(principalID int64) (string, string, string, bool) {
+	if s.creds != nil {
+		if creds, ok := s.creds.Get(principalID); ok {
+			return creds.BaseURL, creds.APIKey, creds.APISecret, true
+		}
+	}
+	if s.defaultBaseURL != "" && s.defaultAPIKey != "" && s.defaultAPISecret != "" {
+		return s.defaultBaseURL, s.defaultAPIKey, s.defaultAPISecret, true
+	}
+	return "", "", "", false
 }
 
 func (s *Service) ListSuppliers(ctx context.Context) ([]suplier.Supplier, error) {

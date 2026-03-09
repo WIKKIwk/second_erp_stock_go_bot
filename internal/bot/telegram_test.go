@@ -313,7 +313,7 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 		mu         sync.Mutex
 		calls      []telegramCall
 		sendCount  int
-		messageIDs = []int{61, 62}
+		messageIDs = []int{61, 62, 63}
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -419,12 +419,15 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	var askName bool
+	var askPassword bool
 	var weakPasswordEdit bool
 	var success bool
 	for _, call := range calls {
 		switch {
 		case call.endpoint == "sendMessage" && call.form["text"] == "Telefon topildi. Ismingizni kiriting:":
 			askName = true
+		case call.endpoint == "sendMessage" && strings.Contains(call.form["text"], "Yangi kuchli parol qo'ying"):
+			askPassword = true
 		case call.endpoint == "editMessageText" && strings.Contains(call.form["text"], "Parol kamida 8 belgidan iborat bo'lishi kerak"):
 			weakPasswordEdit = true
 		case call.endpoint == "sendMessage" &&
@@ -433,7 +436,7 @@ func TestHandleIncomingMessageSharedContactSupplierAuthFlow(t *testing.T) {
 			success = true
 		}
 	}
-	if !askName || !weakPasswordEdit || !success {
+	if !askName || !askPassword || !weakPasswordEdit || !success {
 		t.Fatalf("unexpected call set: %+v", calls)
 	}
 }

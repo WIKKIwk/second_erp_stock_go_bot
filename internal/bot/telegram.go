@@ -202,10 +202,16 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			session.SupplierAuthInputMsgID = message.MessageID
 			session.SupplierAuthMode = SupplierAuthModeRegister
 			session.SupplierAuthStep = SupplierAuthStepAwaitingPassword
-			service.sessions.Upsert(principalID, session)
 			if session.SupplierAuthPromptMsgID > 0 {
-				_ = editMessageText(api, chatID, session.SupplierAuthPromptMsgID, "Siz supplier sifatida ro'yxatdan o'tyapsiz.\nYangi kuchli parol qo'ying: harf va son aralash bo'lsin.")
+				deleteMessageBestEffort(api, chatID, session.SupplierAuthPromptMsgID)
 			}
+			promptID, err := sendTextMessage(api, chatID, "Siz supplier sifatida ro'yxatdan o'tyapsiz.\nYangi kuchli parol qo'ying: harf va son aralash bo'lsin.")
+			if err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			session.SupplierAuthPromptMsgID = promptID
+			service.sessions.Upsert(principalID, session)
+			log.Printf("supplier name verified for principal=%d phone=%s; awaiting password", principalID, session.SupplierAuthPhone)
 			return nil
 
 		case SupplierAuthStepAwaitingPassword:

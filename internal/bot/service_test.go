@@ -177,3 +177,30 @@ func TestServiceHandleTextRequiresLogin(t *testing.T) {
 		t.Fatalf("unexpected message: %q", msg)
 	}
 }
+
+func TestServiceFindSupplierByPhoneFallsBackToERP(t *testing.T) {
+	sessions := NewSessionManager()
+	creds := store.NewMemoryCredentialStore()
+	creds.Save(55, store.Credentials{
+		BaseURL:   "http://localhost:8000",
+		APIKey:    "key",
+		APISecret: "secret",
+	})
+	erp := &fakeERP{
+		suppliers: []erpnext.Supplier{
+			{ID: "SUP-001", Name: "Stocker", Phone: "+998901390311"},
+		},
+	}
+	svc := NewService(sessions, creds, erp, nil, nil, nil, "", "", "", "", "", "", "", "", "", "", "", 0, nil)
+
+	supplier, ok, err := svc.FindSupplierByPhone(context.Background(), 55, "+998901390311")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected supplier to be found")
+	}
+	if supplier.Name != "Stocker" || supplier.Phone != "+998901390311" || supplier.Ref != "SUP-001" {
+		t.Fatalf("unexpected supplier: %+v", supplier)
+	}
+}

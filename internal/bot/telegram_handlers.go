@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	adminsvc "erpnext_stock_telegram/internal/admin"
@@ -26,10 +27,11 @@ func handleSharedContact(ctx context.Context, api *tgbotapi.BotAPI, service *Ser
 		return nil
 	}
 
-	supplier, found, err := service.FindSupplierByPhone(ctx, phone)
+	supplier, found, err := service.FindSupplierByPhone(ctx, principalID, phone)
 	if err != nil && !strings.Contains(err.Error(), "supplier service is not configured") {
 		return fmt.Errorf("supplier lookup failed: %w", err)
 	}
+	log.Printf("supplier contact lookup phone=%s found=%v role=%s", phone, found, session.UserRole)
 
 	if role, name, ok := service.MatchPrivilegedContact(phone); ok {
 		session.UserRole = role
