@@ -184,7 +184,6 @@ func (c *Client) ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKe
 
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"docstatus", "=", 0},
-		{"supplier_delivery_note", "like", telegramReceiptMarkerPrefix + "%"},
 	})
 	params := url.Values{}
 	params.Set("fields", `["name"]`)

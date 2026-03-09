@@ -446,6 +446,34 @@ func TestSearchWarehousesAndUOMs(t *testing.T) {
 	}
 }
 
+func TestListPendingPurchaseReceiptsReturnsAllDrafts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/resource/Purchase Receipt":
+			_, _ = w.Write([]byte(`{"data":[{"name":"MAT-PRE-0001"},{"name":"MAT-PRE-0002"}]}`))
+		case r.URL.Path == "/api/resource/Purchase%20Receipt/MAT-PRE-0001" || r.URL.EscapedPath() == "/api/resource/Purchase%20Receipt/MAT-PRE-0001":
+			_, _ = w.Write([]byte(`{"data":{"doctype":"Purchase Receipt","name":"MAT-PRE-0001","supplier":"SUP-001","posting_date":"2026-03-09","supplier_delivery_note":"","items":[{"item_code":"ITEM-001","item_name":"Rice","qty":10,"uom":"Kg","stock_uom":"Kg","warehouse":"Stores - A","conversion_factor":1}]}}`))
+		case r.URL.Path == "/api/resource/Purchase%20Receipt/MAT-PRE-0002" || r.URL.EscapedPath() == "/api/resource/Purchase%20Receipt/MAT-PRE-0002":
+			_, _ = w.Write([]byte(`{"data":{"doctype":"Purchase Receipt","name":"MAT-PRE-0002","supplier":"SUP-002","posting_date":"2026-03-09","supplier_delivery_note":"TG:+998901234567:20260309120000","items":[{"item_code":"ITEM-002","item_name":"Oil","qty":5,"uom":"L","stock_uom":"L","warehouse":"Stores - A","conversion_factor":1}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	items, err := client.ListPendingPurchaseReceipts(context.Background(), server.URL, "key", "secret", 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 pending drafts, got %d", len(items))
+	}
+	if items[0].Name != "MAT-PRE-0001" || items[1].Name != "MAT-PRE-0002" {
+		t.Fatalf("unexpected drafts: %+v", items)
+	}
+}
+
 func TestBuildSearchQueryVariantsAddsLatinFallbackForCyrillic(t *testing.T) {
 	variants := buildSearchQueryVariants("омбор")
 	if len(variants) != 2 {
