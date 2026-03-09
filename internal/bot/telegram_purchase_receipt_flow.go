@@ -293,7 +293,7 @@ func notifyWerkaAboutDraft(api *tgbotapi.BotAPI, service *Service, draft erpnext
 	}
 
 	text := fmt.Sprintf(
-		"Yangi bildirishnoma.\nSupplier: %s\nMahsulot: %s\nMiqdor: %.2f %s\n/bildirishnoma",
+		"Yangi bildirishnoma.\nSupplier: %s\nMahsulot: %s\nMiqdor: %.2f %s\n/not",
 		draft.Supplier,
 		draft.ItemCode,
 		draft.Qty,

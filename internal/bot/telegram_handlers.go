@@ -260,7 +260,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		return beginSupplierDispatch(api, service, chatID, principalID, session)
 
-	case "bildirishnoma":
+	case "not", "bildirishnoma":
 		deleteMessageBestEffort(api, chatID, message.MessageID)
 		return openPendingReceipts(api, service, chatID, principalID, session)
 
@@ -343,7 +343,7 @@ func handleCommand(ctx context.Context, api *tgbotapi.BotAPI, service *Service, 
 
 	default:
 		deleteMessageBestEffort(api, chatID, message.MessageID)
-		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /dispatch, /bildirishnoma, /settings, /admin, /supplier, /suplier_list, /adminka, /werka"); err != nil {
+		if _, err := sendTextMessage(api, chatID, "Noma'lum buyruq. Mavjud buyruqlar: /start, /login, /stock, /dispatch, /not, /settings, /admin, /supplier, /suplier_list, /adminka, /werka"); err != nil {
 			return fmt.Errorf("telegram send failed: %w", err)
 		}
 		return nil

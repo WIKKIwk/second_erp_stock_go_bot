@@ -105,7 +105,7 @@ func authenticatedStartText(session LoginSession) string {
 	case UserRoleAdmin:
 		return "Siz admin panelga kirdingiz.\n\n" + adminPanelCommandsText()
 	case UserRoleWerka:
-		return "Siz omborchi sifatida tanildingiz.\n/bildirishnoma - pending qabul ro'yxati"
+		return "Siz omborchi sifatida tanildingiz.\n/not - pending qabul ro'yxati"
 	case UserRoleSupplier:
 		if strings.TrimSpace(session.UserName) != "" {
 			return "Siz supplier sifatida tanildingiz: " + session.UserName + "\n/dispatch - jo'natilgan mahsulotni bildirish"

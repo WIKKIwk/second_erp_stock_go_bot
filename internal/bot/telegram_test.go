@@ -672,7 +672,7 @@ func TestSupplierDispatchCreatesDraftPurchaseReceiptAndNotifiesWerka(t *testing.
 	}
 }
 
-func TestWerkaBildirishnomaFlowSubmitsPurchaseReceiptAndNotifiesSupplier(t *testing.T) {
+func TestWerkaNotFlowSubmitsPurchaseReceiptAndNotifiesSupplier(t *testing.T) {
 	var (
 		mu         sync.Mutex
 		calls      []telegramCall
@@ -760,11 +760,11 @@ func TestWerkaBildirishnomaFlowSubmitsPurchaseReceiptAndNotifiesSupplier(t *test
 
 	command := &tgbotapi.Message{
 		MessageID: 20,
-		Text:      "/bildirishnoma",
+		Text:      "/not",
 		Chat:      &tgbotapi.Chat{ID: 321},
 		From:      &tgbotapi.User{ID: 321},
 		Entities: []tgbotapi.MessageEntity{
-			{Type: "bot_command", Offset: 0, Length: len("/bildirishnoma")},
+			{Type: "bot_command", Offset: 0, Length: len("/not")},
 		},
 	}
 	if err := handleIncomingMessage(context.Background(), api, service, command); err != nil {
