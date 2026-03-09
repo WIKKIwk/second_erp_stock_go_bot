@@ -206,6 +206,61 @@ func TestSearchSuppliersFallsBackToSupplierDetailsPhone(t *testing.T) {
 	}
 }
 
+func TestGetSupplier(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/resource/Supplier/SUP-001" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"name":"SUP-001","supplier_name":"Abdulloh","mobile_no":"+998901234567","image":"/files/avatar.png"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	item, err := client.GetSupplier(context.Background(), server.URL, "key", "secret", "SUP-001")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if item.ID != "SUP-001" || item.Image != "/files/avatar.png" || item.Phone != "+998901234567" {
+		t.Fatalf("unexpected supplier: %+v", item)
+	}
+}
+
+func TestUploadSupplierImage(t *testing.T) {
+	uploaded := false
+	updated := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/method/upload_file":
+			if r.Method != http.MethodPost {
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+				return
+			}
+			uploaded = true
+			_, _ = w.Write([]byte(`{"message":{"file_url":"/files/avatar.png"}}`))
+		case "/api/resource/Supplier/SUP-001":
+			if r.Method != http.MethodPut {
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+				return
+			}
+			updated = true
+			_, _ = w.Write([]byte(`{"data":{"name":"SUP-001"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	fileURL, err := client.UploadSupplierImage(context.Background(), server.URL, "key", "secret", "SUP-001", "avatar.png", "image/png", []byte("pngdata"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fileURL != "/files/avatar.png" || !uploaded || !updated {
+		t.Fatalf("unexpected upload result: %q uploaded=%v updated=%v", fileURL, uploaded, updated)
+	}
+}
+
 func TestCreateAndSubmitStockEntry(t *testing.T) {
 	var createPayload map[string]interface{}
 	var submitPayload map[string]interface{}

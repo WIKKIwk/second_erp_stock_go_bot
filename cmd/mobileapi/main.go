@@ -16,6 +16,10 @@ func main() {
 	if addr == "" {
 		addr = ":8081"
 	}
+	profileStorePath := strings.TrimSpace(os.Getenv("MOBILE_API_PROFILE_STORE_PATH"))
+	if profileStorePath == "" {
+		profileStorePath = "data/mobile_profile_prefs.json"
+	}
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -34,6 +38,7 @@ func main() {
 		os.Getenv("MOBILE_DEV_WERKA_CODE"),
 		cfg.WerkaPhone,
 		os.Getenv("MOBILE_DEV_WERKA_NAME"),
+		mobileapi.NewProfileStore(profileStorePath),
 	)
 
 	server := mobileapi.NewServer(auth)

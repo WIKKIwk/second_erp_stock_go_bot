@@ -1,11 +1,15 @@
 package erpnext
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -134,6 +138,135 @@ func (c *Client) EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret 
 		Name:  strings.TrimSpace(response.Data.SupplierName),
 		Phone: strings.TrimSpace(response.Data.MobileNo),
 	}, nil
+}
+
+func (c *Client) GetSupplier(ctx context.Context, baseURL, apiKey, apiSecret, id string) (Supplier, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return Supplier{}, err
+	}
+
+	endpoint := normalized + "/api/resource/Supplier/" + url.PathEscape(strings.TrimSpace(id))
+	var payload struct {
+		Data struct {
+			Name         string `json:"name"`
+			SupplierName string `json:"supplier_name"`
+			MobileNo     string `json:"mobile_no"`
+			Details      string `json:"supplier_details"`
+			Image        string `json:"image"`
+		} `json:"data"`
+	}
+	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+		return Supplier{}, err
+	}
+
+	name := strings.TrimSpace(payload.Data.SupplierName)
+	if name == "" {
+		name = strings.TrimSpace(payload.Data.Name)
+	}
+	phone := strings.TrimSpace(payload.Data.MobileNo)
+	if phone == "" {
+		phone = extractPhoneFromSupplierDetails(payload.Data.Details)
+	}
+
+	return Supplier{
+		ID:    strings.TrimSpace(payload.Data.Name),
+		Name:  name,
+		Phone: phone,
+		Image: strings.TrimSpace(payload.Data.Image),
+	}, nil
+}
+
+func (c *Client) UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(supplierID) == "" {
+		return "", fmt.Errorf("supplier id is required")
+	}
+	if len(content) == 0 {
+		return "", fmt.Errorf("image content is required")
+	}
+
+	fileURL, err := c.uploadFile(ctx, normalized, apiKey, apiSecret, supplierID, filename, contentType, content)
+	if err != nil {
+		return "", err
+	}
+
+	updateEndpoint := normalized + "/api/resource/Supplier/" + url.PathEscape(strings.TrimSpace(supplierID))
+	if err := c.doJSONRequest(ctx, http.MethodPut, updateEndpoint, apiKey, apiSecret, map[string]string{
+		"image": fileURL,
+	}, nil); err != nil {
+		return "", err
+	}
+
+	return fileURL, nil
+}
+
+func (c *Client) uploadFile(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error) {
+	if strings.TrimSpace(filename) == "" {
+		filename = "avatar.png"
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "image/png"
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	if err := writer.WriteField("doctype", "Supplier"); err != nil {
+		return "", err
+	}
+	if err := writer.WriteField("docname", strings.TrimSpace(supplierID)); err != nil {
+		return "", err
+	}
+	if err := writer.WriteField("is_private", "0"); err != nil {
+		return "", err
+	}
+
+	part, err := writer.CreateFormFile("file", filepath.Base(filename))
+	if err != nil {
+		return "", err
+	}
+	if _, err := part.Write(content); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/method/upload_file", &body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("token %s:%s", apiKey, apiSecret))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var payload struct {
+		Message struct {
+			FileURL string `json:"file_url"`
+		} `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(payload.Message.FileURL) == "" {
+		return "", fmt.Errorf("upload_file did not return file_url")
+	}
+	return strings.TrimSpace(payload.Message.FileURL), nil
 }
 
 func extractPhoneFromSupplierDetails(details string) string {

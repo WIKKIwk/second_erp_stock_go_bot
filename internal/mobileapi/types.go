@@ -12,8 +12,10 @@ const (
 type Principal struct {
 	Role        PrincipalRole `json:"role"`
 	DisplayName string        `json:"display_name"`
+	LegalName   string        `json:"legal_name,omitempty"`
 	Ref         string        `json:"ref,omitempty"`
 	Phone       string        `json:"phone,omitempty"`
+	AvatarURL   string        `json:"avatar_url,omitempty"`
 }
 
 type Authenticator interface {
@@ -57,4 +59,8 @@ type CreateDispatchRequest struct {
 type ConfirmReceiptRequest struct {
 	ReceiptID   string  `json:"receipt_id"`
 	AcceptedQty float64 `json:"accepted_qty"`
+}
+
+type ProfileUpdateRequest struct {
+	Nickname string `json:"nickname"`
 }

@@ -1,6 +1,7 @@
 package mobileapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -21,11 +22,13 @@ var (
 
 type ERPClient interface {
 	SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error)
+	GetSupplier(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error)
 	SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]erpnext.Item, error)
 	ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
 	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty float64) (erpnext.PurchaseReceiptSubmissionResult, error)
+	UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error)
 }
 
 type ERPAuthenticator struct {
@@ -39,6 +42,7 @@ type ERPAuthenticator struct {
 	werkaCode        string
 	werkaPhone       string
 	werkaName        string
+	profiles         *ProfileStore
 }
 
 func NewERPAuthenticator(
@@ -52,6 +56,7 @@ func NewERPAuthenticator(
 	werkaCode string,
 	werkaPhone string,
 	werkaName string,
+	profiles *ProfileStore,
 ) *ERPAuthenticator {
 	if strings.TrimSpace(supplierPrefix) == "" {
 		supplierPrefix = "10"
@@ -74,6 +79,7 @@ func NewERPAuthenticator(
 		werkaCode:        strings.TrimSpace(werkaCode),
 		werkaPhone:       strings.TrimSpace(werkaPhone),
 		werkaName:        strings.TrimSpace(werkaName),
+		profiles:         profiles,
 	}
 }
 
@@ -106,12 +112,14 @@ func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Princ
 			if strings.TrimSpace(code) == creds.Code &&
 				strings.TrimSpace(item.Phone) != "" &&
 				strings.EqualFold(strings.TrimSpace(item.Phone), normalizedPhone) {
-				return Principal{
+				principal := Principal{
 					Role:        RoleSupplier,
 					DisplayName: item.Name,
+					LegalName:   item.Name,
 					Ref:         item.ID,
 					Phone:       item.Phone,
-				}, nil
+				}
+				return a.mergeProfilePrefs(principal), nil
 			}
 		}
 		return Principal{}, ErrInvalidCredentials
@@ -130,7 +138,9 @@ func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Princ
 			return Principal{
 				Role:        RoleWerka,
 				DisplayName: a.werkaName,
+				LegalName:   a.werkaName,
 				Ref:         "werka",
+				Phone:       normalizedPhone,
 			}, nil
 		}
 		return Principal{}, ErrInvalidCredentials
@@ -138,6 +148,58 @@ func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Princ
 	default:
 		return Principal{}, ErrInvalidRole
 	}
+}
+
+func (a *ERPAuthenticator) Profile(ctx context.Context, principal Principal) (Principal, error) {
+	if principal.Role == RoleSupplier {
+		doc, err := a.erp.GetSupplier(ctx, a.baseURL, a.apiKey, a.apiSecret, principal.Ref)
+		if err == nil {
+			principal.Phone = doc.Phone
+			if doc.Image != "" {
+				principal.AvatarURL = absoluteFileURL(a.baseURL, doc.Image)
+			}
+		}
+	}
+	return a.mergeProfilePrefs(principal), nil
+}
+
+func (a *ERPAuthenticator) UpdateNickname(principal Principal, nickname string) (Principal, error) {
+	if a.profiles == nil {
+		return principal, nil
+	}
+	prefs, err := a.profiles.Get(profileKey(principal))
+	if err != nil {
+		return Principal{}, err
+	}
+	prefs.Nickname = strings.TrimSpace(nickname)
+	if err := a.profiles.Put(profileKey(principal), prefs); err != nil {
+		return Principal{}, err
+	}
+	return a.mergeProfilePrefs(principal), nil
+}
+
+func (a *ERPAuthenticator) UploadAvatar(ctx context.Context, principal Principal, filename, contentType string, content []byte) (Principal, error) {
+	if principal.Role != RoleSupplier {
+		return principal, nil
+	}
+	fileURL, err := a.erp.UploadSupplierImage(ctx, a.baseURL, a.apiKey, a.apiSecret, principal.Ref, filename, contentType, content)
+	if err != nil {
+		return Principal{}, err
+	}
+	principal.AvatarURL = absoluteFileURL(a.baseURL, fileURL)
+
+	if a.profiles != nil {
+		prefs, err := a.profiles.Get(profileKey(principal))
+		if err != nil {
+			return Principal{}, err
+		}
+		prefs.AvatarURL = principal.AvatarURL
+		if err := a.profiles.Put(profileKey(principal), prefs); err != nil {
+			return Principal{}, err
+		}
+	}
+
+	return a.mergeProfilePrefs(principal), nil
 }
 
 func (a *ERPAuthenticator) inferRole(code string) (PrincipalRole, error) {
@@ -306,11 +368,59 @@ func (m *SessionManager) Delete(token string) {
 	delete(m.sessions, token)
 }
 
+func (m *SessionManager) Update(token string, principal Principal) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.sessions[token]; !ok {
+		return
+	}
+	m.sessions[token] = principal
+}
+
 func requireRole(principal Principal, role PrincipalRole) error {
 	if principal.Role != role {
 		return fmt.Errorf("role %s required", role)
 	}
 	return nil
+}
+
+func (a *ERPAuthenticator) mergeProfilePrefs(principal Principal) Principal {
+	if a.profiles == nil {
+		return principal
+	}
+	prefs, err := a.profiles.Get(profileKey(principal))
+	if err != nil {
+		return principal
+	}
+	if strings.TrimSpace(prefs.Nickname) != "" {
+		principal.DisplayName = strings.TrimSpace(prefs.Nickname)
+	}
+	if strings.TrimSpace(prefs.AvatarURL) != "" {
+		principal.AvatarURL = strings.TrimSpace(prefs.AvatarURL)
+	}
+	if principal.DisplayName == "" {
+		principal.DisplayName = principal.LegalName
+	}
+	return principal
+}
+
+func profileKey(principal Principal) string {
+	return string(principal.Role) + ":" + strings.TrimSpace(principal.Ref)
+}
+
+func absoluteFileURL(baseURL, fileURL string) string {
+	trimmed := strings.TrimSpace(fileURL)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+	return strings.TrimRight(baseURL, "/") + trimmed
+}
+
+func bytesReader(content []byte) *bytes.Reader {
+	return bytes.NewReader(content)
 }
 
 func mapDispatchStatus(item erpnext.PurchaseReceiptDraft, sentQty float64) (string, float64) {
