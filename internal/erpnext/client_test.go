@@ -154,6 +154,38 @@ func TestSearchSuppliers(t *testing.T) {
 	}
 }
 
+func TestEnsureSupplierCreatesWhenMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/resource/Supplier":
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"data":[]}`))
+				return
+			}
+			if r.Method == http.MethodPost {
+				_, _ = w.Write([]byte(`{"data":{"name":"SUP-001","supplier_name":"Ali","mobile_no":"+998901234567"}}`))
+				return
+			}
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	supplier, err := client.EnsureSupplier(context.Background(), server.URL, "key", "secret", CreateSupplierInput{
+		Name:  "Ali",
+		Phone: "+998901234567",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if supplier.ID != "SUP-001" || supplier.Name != "Ali" || supplier.Phone != "+998901234567" {
+		t.Fatalf("unexpected supplier: %+v", supplier)
+	}
+}
+
 func TestCreateAndSubmitStockEntry(t *testing.T) {
 	var createPayload map[string]interface{}
 	var submitPayload map[string]interface{}

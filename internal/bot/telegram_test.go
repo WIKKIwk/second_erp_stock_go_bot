@@ -1063,7 +1063,8 @@ func TestSupplierFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 	sessions := NewSessionManager()
 	creds := store.NewMemoryCredentialStore()
 	supplierManager := &fakeSupplierManager{}
-	service := NewService(sessions, creds, &fakeERP{}, nil, supplierManager, nil, "secret", "", "", "Kg", "", "", "", "", "", "", "", 0, nil)
+	erp := &fakeERP{}
+	service := NewService(sessions, creds, erp, nil, supplierManager, nil, "secret", "", "", "Kg", "https://erp.example.com", "key", "secret", "", "", "", "", 0, nil)
 
 	adminSession := LoginSession{AdminAuthed: true}
 	commandMessage := &tgbotapi.Message{
@@ -1100,6 +1101,9 @@ func TestSupplierFlowDeletesTwoBotAndTwoUserMessagesOnSuccess(t *testing.T) {
 
 	if len(supplierManager.added) != 1 {
 		t.Fatalf("expected supplier to be added, got %+v", supplierManager.added)
+	}
+	if erp.ensureSupplierIn.Name != "Ali" || erp.ensureSupplierIn.Phone != "+998901234567" {
+		t.Fatalf("expected ERP supplier sync, got %+v", erp.ensureSupplierIn)
 	}
 
 	mu.Lock()

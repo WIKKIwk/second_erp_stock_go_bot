@@ -21,6 +21,7 @@ type ERPAuthenticator interface {
 	SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error)
 	SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]erpnext.Item, error)
 	SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error)
+	EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateSupplierInput) (erpnext.Supplier, error)
 	SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
 	SearchUOMs(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.UOM, error)
 	CreateAndSubmitStockEntry(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateStockEntryInput) (erpnext.StockEntryResult, error)
@@ -132,6 +133,25 @@ func (s *Service) AddSupplier(ctx context.Context, name, phone string) (suplier.
 		return suplier.Supplier{}, fmt.Errorf("supplier service is not configured")
 	}
 	return s.supplier.Add(ctx, name, phone)
+}
+
+func (s *Service) AddSupplierWithERP(ctx context.Context, principalID int64, name, phone string) (suplier.Supplier, error) {
+	if !s.EnsureCredentials(principalID) {
+		return suplier.Supplier{}, fmt.Errorf("Iltimos, avval /login qiling.")
+	}
+	creds, ok := s.creds.Get(principalID)
+	if !ok {
+		return suplier.Supplier{}, fmt.Errorf("Iltimos, avval /login qiling.")
+	}
+
+	if _, err := s.erp.EnsureSupplier(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, erpnext.CreateSupplierInput{
+		Name:  name,
+		Phone: phone,
+	}); err != nil {
+		return suplier.Supplier{}, err
+	}
+
+	return s.AddSupplier(ctx, name, phone)
 }
 
 func (s *Service) FindSupplierByPhone(ctx context.Context, phone string) (suplier.Supplier, bool, error) {

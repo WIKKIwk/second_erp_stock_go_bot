@@ -288,7 +288,7 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 			return nil
 
 		case SupplierStepAwaitingPhone:
-			_, err := service.AddSupplier(ctx, session.SupplierName, message.Text)
+			_, err := service.AddSupplierWithERP(ctx, principalID, session.SupplierName, message.Text)
 			if err != nil {
 				deleteMessageBestEffort(api, chatID, message.MessageID)
 				if session.SupplierPhoneMsgID > 0 {

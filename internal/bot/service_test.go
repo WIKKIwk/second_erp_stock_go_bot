@@ -15,6 +15,7 @@ type fakeERP struct {
 	err               error
 	supplierItems     []erpnext.Item
 	suppliers         []erpnext.Supplier
+	ensureSupplierIn  erpnext.CreateSupplierInput
 	createDraftInput  erpnext.CreatePurchaseReceiptInput
 	createDraftResult erpnext.PurchaseReceiptDraft
 	createDraftErr    error
@@ -45,6 +46,15 @@ func (f *fakeERP) SearchSupplierItems(_ context.Context, _, _, _, _, _ string, _
 
 func (f *fakeERP) SearchSuppliers(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Supplier, error) {
 	return f.suppliers, nil
+}
+
+func (f *fakeERP) EnsureSupplier(_ context.Context, _, _, _ string, input erpnext.CreateSupplierInput) (erpnext.Supplier, error) {
+	f.ensureSupplierIn = input
+	return erpnext.Supplier{
+		ID:    "SUP-001",
+		Name:  input.Name,
+		Phone: input.Phone,
+	}, nil
 }
 
 func (f *fakeERP) SearchWarehouses(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Warehouse, error) {
