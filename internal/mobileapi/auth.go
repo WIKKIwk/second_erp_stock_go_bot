@@ -37,7 +37,7 @@ type ERPAuthenticator struct {
 	supplierPrefix   string
 	werkaPrefix      string
 	werkaCode        string
-	werkaSecret      string
+	werkaPhone       string
 	werkaName        string
 }
 
@@ -50,7 +50,7 @@ func NewERPAuthenticator(
 	supplierPrefix string,
 	werkaPrefix string,
 	werkaCode string,
-	werkaSecret string,
+	werkaPhone string,
 	werkaName string,
 ) *ERPAuthenticator {
 	if strings.TrimSpace(supplierPrefix) == "" {
@@ -72,15 +72,20 @@ func NewERPAuthenticator(
 		supplierPrefix:   strings.TrimSpace(supplierPrefix),
 		werkaPrefix:      strings.TrimSpace(werkaPrefix),
 		werkaCode:        strings.TrimSpace(werkaCode),
-		werkaSecret:      strings.TrimSpace(werkaSecret),
+		werkaPhone:       strings.TrimSpace(werkaPhone),
 		werkaName:        strings.TrimSpace(werkaName),
 	}
 }
 
-func (a *ERPAuthenticator) Login(ctx context.Context, code, secret string) (Principal, error) {
+func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Principal, error) {
 	role, err := a.inferRole(code)
 	if err != nil {
 		return Principal{}, err
+	}
+
+	normalizedPhone, err := suplier.NormalizePhone(phone)
+	if err != nil {
+		return Principal{}, ErrInvalidCredentials
 	}
 
 	switch role {
@@ -98,7 +103,9 @@ func (a *ERPAuthenticator) Login(ctx context.Context, code, secret string) (Prin
 			if err != nil {
 				continue
 			}
-			if strings.TrimSpace(code) == creds.Code && strings.TrimSpace(secret) == creds.Secret {
+			if strings.TrimSpace(code) == creds.Code &&
+				strings.TrimSpace(item.Phone) != "" &&
+				strings.EqualFold(strings.TrimSpace(item.Phone), normalizedPhone) {
 				return Principal{
 					Role:        RoleSupplier,
 					DisplayName: item.Name,
@@ -110,7 +117,16 @@ func (a *ERPAuthenticator) Login(ctx context.Context, code, secret string) (Prin
 		return Principal{}, ErrInvalidCredentials
 
 	case RoleWerka:
-		if code == a.werkaCode && secret == a.werkaSecret && code != "" && secret != "" {
+		if code == a.werkaCode && code != "" {
+			if a.werkaPhone != "" {
+				expectedWerkaPhone, err := suplier.NormalizePhone(a.werkaPhone)
+				if err != nil {
+					return Principal{}, ErrInvalidCredentials
+				}
+				if expectedWerkaPhone != normalizedPhone {
+					return Principal{}, ErrInvalidCredentials
+				}
+			}
 			return Principal{
 				Role:        RoleWerka,
 				DisplayName: a.werkaName,

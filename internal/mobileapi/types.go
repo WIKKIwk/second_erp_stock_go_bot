@@ -17,12 +17,12 @@ type Principal struct {
 }
 
 type Authenticator interface {
-	Login(ctx context.Context, code, secret string) (Principal, error)
+	Login(ctx context.Context, phone, code string) (Principal, error)
 }
 
 type LoginRequest struct {
-	Code   string `json:"code"`
-	Secret string `json:"secret"`
+	Phone string `json:"phone"`
+	Code  string `json:"code"`
 }
 
 type LoginResponse struct {

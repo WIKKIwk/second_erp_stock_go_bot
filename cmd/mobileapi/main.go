@@ -32,7 +32,7 @@ func main() {
 		os.Getenv("MOBILE_DEV_SUPPLIER_PREFIX"),
 		os.Getenv("MOBILE_DEV_WERKA_PREFIX"),
 		os.Getenv("MOBILE_DEV_WERKA_CODE"),
-		os.Getenv("MOBILE_DEV_WERKA_SECRET"),
+		cfg.WerkaPhone,
 		os.Getenv("MOBILE_DEV_WERKA_NAME"),
 	)
 

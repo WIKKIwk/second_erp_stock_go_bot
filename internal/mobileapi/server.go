@@ -49,7 +49,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	principal, err := s.auth.Login(r.Context(), strings.TrimSpace(req.Code), strings.TrimSpace(req.Secret))
+	principal, err := s.auth.Login(r.Context(), strings.TrimSpace(req.Phone), strings.TrimSpace(req.Code))
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidCredentials), errors.Is(err, ErrInvalidRole):

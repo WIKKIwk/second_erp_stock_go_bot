@@ -63,15 +63,15 @@ func TestServerLoginAndMeFlow(t *testing.T) {
 		"10",
 		"20",
 		"20WERKA0001",
-		"werka-secret",
+		"+998901111111",
 		"Werka",
 	))
 	ts := httptest.NewServer(server.Handler())
 	defer ts.Close()
 
 	body, _ := json.Marshal(LoginRequest{
+		Phone:  "+998901234567",
 		Code:   creds.Code,
-		Secret: creds.Secret,
 	})
 	resp, err := http.Post(ts.URL+"/v1/mobile/auth/login", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -117,7 +117,7 @@ func TestServerLogoutInvalidatesSession(t *testing.T) {
 		"10",
 		"20",
 		"20WERKA0001",
-		"werka-secret",
+		"+998901111111",
 		"Werka",
 	))
 	token, err := server.sessions.Create(Principal{Role: RoleSupplier, DisplayName: "Abdulloh"})
