@@ -66,14 +66,11 @@ func openPendingReceipts(api *tgbotapi.BotAPI, service *Service, chatID, princip
 	}
 
 	clearNoticeState(&session)
+	session.WarehouseNoticeListActive = true
 	service.sessions.Upsert(principalID, session)
 
-	lines := make([]string, 0, len(items)+1)
-	lines = append(lines, "Pending qabul qilish ro'yxati:")
-	for i, item := range items {
-		lines = append(lines, fmt.Sprintf("%d. %s | %s | %.2f %s", i+1, item.Supplier, item.ItemCode, item.Qty, item.UOM))
-	}
-	if _, err := sendTextMessageWithKeyboard(api, chatID, strings.Join(lines, "\n"), pendingReceiptKeyboard(items)); err != nil {
+	text := fmt.Sprintf("Pending qabul qilish ro'yxati: %d ta draft bor.\nQuyidagi 'Draft' tugmasini bosing.", len(items))
+	if _, err := sendTextMessageWithKeyboard(api, chatID, text, pendingReceiptPickerKeyboard()); err != nil {
 		return fmt.Errorf("telegram send failed: %w", err)
 	}
 	return nil
@@ -265,6 +262,7 @@ func handleNoticeOpenCallback(ctx context.Context, api *tgbotapi.BotAPI, service
 
 	clearNoticeState(&session)
 	session.PromptMessageID = messageID
+	session.WarehouseNoticeListActive = false
 	session.WarehouseNoticeStep = WarehouseNoticeStepAwaitingAcceptedQty
 	session.NoticeReceiptName = draft.Name
 	session.NoticeSupplierPhone = parseTelegramReceiptPhone(draft.SupplierDeliveryNote)
@@ -341,6 +339,7 @@ func clearDispatchState(session *LoginSession) {
 
 func clearNoticeState(session *LoginSession) {
 	session.WarehouseNoticeStep = WarehouseNoticeStepNone
+	session.WarehouseNoticeListActive = false
 	session.NoticeReceiptName = ""
 	session.NoticeSupplierPhone = ""
 	session.NoticeSupplierName = ""

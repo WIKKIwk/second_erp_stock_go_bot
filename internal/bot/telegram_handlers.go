@@ -566,6 +566,32 @@ func handleInlineQuery(ctx context.Context, api *tgbotapi.BotAPI, service *Servi
 		return answerInline(api, q.ID, results)
 	}
 
+	if session.WarehouseNoticeListActive && (session.UserRole == UserRoleWerka || session.UserRole == UserRoleAdmin || session.AdminAuthed) {
+		items, err := service.erp.ListPendingPurchaseReceipts(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, 20)
+		if err != nil {
+			return fmt.Errorf("pending receipt search failed: %w", err)
+		}
+		query := strings.ToLower(normalizeInlineQuery(q.Query, "notice"))
+		results := make([]interface{}, 0, len(items))
+		for _, item := range items {
+			title := fmt.Sprintf("%s | %s", item.Supplier, item.ItemCode)
+			if query != "" {
+				candidate := strings.ToLower(strings.Join([]string{item.Supplier, item.ItemCode, item.ItemName, item.Name}, " "))
+				if !strings.Contains(candidate, query) {
+					continue
+				}
+			}
+			article := tgbotapi.NewInlineQueryResultArticle(
+				item.Name,
+				title,
+				inlineNoticePrefix+item.Name,
+			)
+			article.Description = fmt.Sprintf("%.2f %s", item.Qty, item.UOM)
+			results = append(results, article)
+		}
+		return answerInline(api, q.ID, results)
+	}
+
 	if session.SettingsAuthed && session.SettingsSelect == SettingsSelectionWarehouse {
 		query := normalizeInlineQuery(q.Query, "wer")
 		warehouses, err := service.erp.SearchWarehouses(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, query, 20)

@@ -128,6 +128,10 @@ func parseInlineSupplierValue(text string) (string, bool) {
 	return parseInlineValue(text, inlineSupplierPrefix)
 }
 
+func parseInlineNoticeReceiptName(text string) (string, bool) {
+	return parseInlineValue(text, inlineNoticePrefix)
+}
+
 func parseInlineUOMName(text string) (string, bool) {
 	return parseInlineValue(text, inlineUOMPrefix)
 }

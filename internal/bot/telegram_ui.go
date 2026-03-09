@@ -107,6 +107,14 @@ func supplierPickerKeyboard() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(row)
 }
 
+func pendingReceiptPickerKeyboard() tgbotapi.InlineKeyboardMarkup {
+	query := "notice"
+	row := tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.InlineKeyboardButton{Text: "Draft", SwitchInlineQueryCurrentChat: &query},
+	)
+	return tgbotapi.NewInlineKeyboardMarkup(row)
+}
+
 func dispatchConfirmKeyboard() tgbotapi.InlineKeyboardMarkup {
 	row := tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData("Ha", callbackDispatchConfirm),

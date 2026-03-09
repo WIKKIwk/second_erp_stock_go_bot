@@ -22,6 +22,7 @@ const (
 	callbackNoticeOpenPrefix = "notice:open:"
 
 	inlineItemPrefix      = "item::"
+	inlineNoticePrefix    = "notice::"
 	inlineSupplierPrefix  = "sup::"
 	inlineWarehousePrefix = "wer::"
 	inlineUOMPrefix       = "uom::"
@@ -309,6 +310,23 @@ func handleIncomingMessage(ctx context.Context, api *tgbotapi.BotAPI, service *S
 		}
 
 		return ensureAdminPanelText(api, chatID, &session, service, principalID, "Supplier code yuborildi.\nYana ko'rish uchun /suplier_list", tgbotapi.InlineKeyboardMarkup{})
+	}
+
+	if session.WarehouseNoticeListActive {
+		deleteMessageBestEffort(api, chatID, message.MessageID)
+		receiptName, parsed := parseInlineNoticeReceiptName(message.Text)
+		if !parsed {
+			if _, err := sendTextMessage(api, chatID, "Iltimos, draftni inline menyudan tanlang."); err != nil {
+				return fmt.Errorf("telegram send failed: %w", err)
+			}
+			return nil
+		}
+
+		promptID, err := sendTextMessage(api, chatID, "Draft ochilmoqda...")
+		if err != nil {
+			return fmt.Errorf("telegram send failed: %w", err)
+		}
+		return handleNoticeOpenCallback(ctx, api, service, chatID, principalID, session, receiptName, promptID)
 	}
 
 	if session.SettingsStep == SettingsStepAwaitingPassword {
