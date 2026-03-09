@@ -60,3 +60,15 @@ func TestServiceFindByPhone(t *testing.T) {
 		t.Fatalf("unexpected supplier: %+v", supplier)
 	}
 }
+
+func TestServiceAddRejectsDuplicateName(t *testing.T) {
+	repository := &fakeRepository{
+		items: []Supplier{{Name: "Ali", Phone: "+998901234567"}},
+	}
+	service := NewService(repository)
+
+	_, err := service.Add(context.Background(), "Ali", "998901111111")
+	if err == nil {
+		t.Fatal("expected duplicate name error")
+	}
+}

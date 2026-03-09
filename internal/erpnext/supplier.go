@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"erpnext_stock_telegram/internal/suplier"
 )
 
 type CreateSupplierInput struct {
@@ -48,9 +50,11 @@ func (c *Client) SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret
 			Name         string `json:"name"`
 			SupplierName string `json:"supplier_name"`
 			MobileNo     string `json:"mobile_no"`
+			Details      string `json:"supplier_details"`
 		} `json:"data"`
 	}
 
+	params.Set("fields", `["name","supplier_name","mobile_no","supplier_details"]`)
 	endpoint := normalized + "/api/resource/Supplier?" + params.Encode()
 	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
 		return nil, err
@@ -62,10 +66,14 @@ func (c *Client) SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret
 		if name == "" {
 			name = strings.TrimSpace(row.Name)
 		}
+		phone := strings.TrimSpace(row.MobileNo)
+		if phone == "" {
+			phone = extractPhoneFromSupplierDetails(row.Details)
+		}
 		items = append(items, Supplier{
 			ID:    strings.TrimSpace(row.Name),
 			Name:  name,
-			Phone: strings.TrimSpace(row.MobileNo),
+			Phone: phone,
 		})
 	}
 	return items, nil
@@ -88,17 +96,25 @@ func (c *Client) EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret 
 		return Supplier{}, err
 	}
 	for _, item := range existing {
-		if strings.EqualFold(strings.TrimSpace(item.Name), name) ||
-			(phone != "" && strings.EqualFold(strings.TrimSpace(item.Phone), phone)) {
-			return item, nil
+		if strings.EqualFold(strings.TrimSpace(item.Name), name) {
+			return Supplier{}, fmt.Errorf("ERPNext'da shu nomdagi supplier allaqachon mavjud")
+		}
+		if phone != "" && strings.EqualFold(strings.TrimSpace(item.Phone), phone) {
+			return Supplier{}, fmt.Errorf("ERPNext'da shu telefon raqam bilan supplier allaqachon mavjud")
 		}
 	}
 
+	details := ""
+	if phone != "" {
+		details = "Telefon: " + phone
+	}
+
 	payload := map[string]interface{}{
-		"supplier_name":  name,
-		"supplier_type":  "Company",
-		"supplier_group": "Services",
-		"mobile_no":      phone,
+		"supplier_name":    name,
+		"supplier_type":    "Company",
+		"supplier_group":   "Services",
+		"mobile_no":        phone,
+		"supplier_details": details,
 	}
 
 	var response struct {
@@ -118,4 +134,21 @@ func (c *Client) EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret 
 		Name:  strings.TrimSpace(response.Data.SupplierName),
 		Phone: strings.TrimSpace(response.Data.MobileNo),
 	}, nil
+}
+
+func extractPhoneFromSupplierDetails(details string) string {
+	lines := strings.Split(details, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if idx := strings.Index(trimmed, ":"); idx >= 0 {
+			trimmed = strings.TrimSpace(trimmed[idx+1:])
+		}
+		if phone, err := suplier.NormalizePhone(trimmed); err == nil {
+			return phone
+		}
+	}
+	return ""
 }

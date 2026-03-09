@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 type Service struct {
@@ -32,6 +33,20 @@ func (s *Service) Add(ctx context.Context, name, phone string) (Supplier, error)
 		Name:  normalizedName,
 		Phone: normalizedPhone,
 	}
+
+	existing, err := s.repository.List(ctx)
+	if err != nil {
+		return Supplier{}, err
+	}
+	for _, item := range existing {
+		if strings.EqualFold(strings.TrimSpace(item.Name), normalizedName) {
+			return Supplier{}, fmt.Errorf("Supplier nomi allaqachon mavjud")
+		}
+		if strings.EqualFold(strings.TrimSpace(item.Phone), normalizedPhone) {
+			return Supplier{}, fmt.Errorf("Supplier telefon raqami allaqachon mavjud")
+		}
+	}
+
 	if err := s.repository.Add(ctx, supplier); err != nil {
 		return Supplier{}, err
 	}

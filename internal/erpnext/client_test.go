@@ -140,7 +140,7 @@ func TestSearchSuppliers(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":[{"name":"SUP-001","supplier_name":"Abdulloh","mobile_no":"+998901234567"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"name":"SUP-001","supplier_name":"Abdulloh","mobile_no":"+998901234567","supplier_details":"Telefon: +998901234567"}]}`))
 	}))
 	defer server.Close()
 
@@ -183,6 +183,26 @@ func TestEnsureSupplierCreatesWhenMissing(t *testing.T) {
 	}
 	if supplier.ID != "SUP-001" || supplier.Name != "Ali" || supplier.Phone != "+998901234567" {
 		t.Fatalf("unexpected supplier: %+v", supplier)
+	}
+}
+
+func TestSearchSuppliersFallsBackToSupplierDetailsPhone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/resource/Supplier" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"name":"SUP-001","supplier_name":"Abdulloh","mobile_no":"","supplier_details":"Telefon: +998901234567"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	items, err := client.SearchSuppliers(context.Background(), server.URL, "key", "secret", "abd", 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 || items[0].Phone != "+998901234567" {
+		t.Fatalf("unexpected suppliers: %+v", items)
 	}
 }
 
