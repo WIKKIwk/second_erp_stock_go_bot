@@ -1,4 +1,5 @@
 APP := ./cmd/bot
+CORE_APP := ./cmd/core
 BIN_DIR := ./bin
 BIN := $(BIN_DIR)/erpnext-bot
 BOT_PID_FILE := .bot.pid
@@ -7,7 +8,7 @@ CORE_ADDR ?= http://127.0.0.1:8081
 CORE_PID_FILE := .core.pid
 CORE_LOG_FILE := .core.log
 
-.PHONY: run stop build test tidy fmt local-erp-env local-erp-check run-local-erp run-mobile-api core-up core-stop
+.PHONY: run run-all run-bot run-core stop build test tidy fmt local-erp-env local-erp-check run-local-erp run-mobile-api core-up core-stop
 
 token_from_env = $$( [ -f .env ] && sed -n 's/^TELEGRAM_BOT_TOKEN=//p' .env | head -n1 )
 
@@ -60,7 +61,7 @@ core-up:
 		echo "Core already running at $(CORE_ADDR)"; \
 	else \
 		echo "Starting core on $(CORE_ADDR)"; \
-		setsid go run ./cmd/mobileapi >"$(CORE_LOG_FILE)" 2>&1 < /dev/null & \
+		setsid go run $(CORE_APP) >"$(CORE_LOG_FILE)" 2>&1 < /dev/null & \
 		echo $$! >"$(CORE_PID_FILE)"; \
 		for _ in $$(seq 1 40); do \
 			if curl -fsS "$(CORE_ADDR)/healthz" >/dev/null 2>&1; then \
@@ -79,8 +80,9 @@ core-stop:
 		pids_file="$$(cat "$(CORE_PID_FILE)" 2>/dev/null || true)"; \
 	fi; \
 	pids_go=$$(pgrep -x -f "go run ./cmd/mobileapi" || true); \
+	pids_core_go=$$(pgrep -x -f "go run ./cmd/core" || true); \
 	pids_port=$$(lsof -t -iTCP:8081 -sTCP:LISTEN -n -P 2>/dev/null || true); \
-	pids=$$(printf "%s\n%s\n%s\n" "$$pids_file" "$$pids_go" "$$pids_port" | tr ' ' '\n' | awk 'NF' | sort -u | paste -sd' ' -); \
+	pids=$$(printf "%s\n%s\n%s\n%s\n" "$$pids_file" "$$pids_go" "$$pids_core_go" "$$pids_port" | tr ' ' '\n' | awk 'NF' | sort -u | paste -sd' ' -); \
 	if [ -n "$$pids" ]; then \
 		echo "Stopping existing core process(es): $$pids"; \
 		kill $$pids 2>/dev/null || true; \
@@ -95,7 +97,9 @@ core-stop:
 	fi; \
 	rm -f "$(CORE_PID_FILE)"
 
-run: stop build core-up
+run: run-all
+
+run-all: stop build core-up
 	@token="$(token_from_env)"; \
 	token="$${token#\"}"; \
 	token="$${token%\"}"; \
@@ -108,6 +112,19 @@ run: stop build core-up
 	echo "$$bot_pid" >"$(BOT_PID_FILE)"; \
 	trap 'kill "$$bot_pid" 2>/dev/null || true; rm -f "$(BOT_PID_FILE)"' INT TERM EXIT; \
 	wait "$$bot_pid"
+
+run-bot: stop build
+	@token="$(token_from_env)"; \
+	token="$${token#\"}"; \
+	token="$${token%\"}"; \
+	token="$${token#\'}"; \
+	token="$${token%\'}"; \
+	if [ -n "$$token" ]; then export TELEGRAM_BOT_TOKEN="$$token"; fi; \
+	echo "Starting bot from $(BIN)"; \
+	exec "$(BIN)"
+
+run-core: core-stop
+	@MOBILE_API_ADDR=":8081" go run $(CORE_APP)
 
 local-erp-env:
 	@./scripts/setup_local_erp_env.sh
@@ -134,5 +151,4 @@ tidy:
 fmt:
 	@gofmt -w $$(find . -name '*.go' -type f)
 
-run-mobile-api:
-	@go run ./cmd/mobileapi
+run-mobile-api: run-core
