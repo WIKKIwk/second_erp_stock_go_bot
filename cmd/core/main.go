@@ -42,9 +42,9 @@ func main() {
 		core.NewProfileStore(profileStorePath),
 	)
 	service.SetAdminIdentity(
-		cfg.AdminkaPhone,
-		cfg.AdminkaName,
-		cfg.AdminPassword,
+		"+998880000000",
+		"Admin",
+		"19621978",
 		config.NewDotEnvPersister(".env"),
 	)
 
