@@ -1,6 +1,8 @@
 APP := ./cmd/bot
 BIN_DIR := ./bin
 BIN := $(BIN_DIR)/erpnext-bot
+BOT_PID_FILE := .bot.pid
+BOT_LOG_FILE := .bot.log
 CORE_ADDR ?= http://127.0.0.1:8081
 CORE_PID_FILE := .core.pid
 CORE_LOG_FILE := .core.log
@@ -19,6 +21,10 @@ stop:
 	token="$${token%\"}"; \
 	token="$${token#\'}"; \
 	token="$${token%\'}"; \
+	pids_file=""; \
+	if [ -f "$(BOT_PID_FILE)" ]; then \
+		pids_file="$$(cat "$(BOT_PID_FILE)" 2>/dev/null || true)"; \
+	fi; \
 	pids_bin=$$(pgrep -x -f "$(CURDIR)/bin/erpnext-bot" || true); \
 	pids_go=$$(pgrep -x -f "go run ./cmd/bot" || true); \
 	pids_token=""; \
@@ -33,7 +39,7 @@ stop:
 			fi; \
 		done; \
 	fi; \
-	pids=$$(printf "%s\n%s\n%s\n" "$$pids_bin" "$$pids_go" "$$pids_token" | tr ' ' '\n' | awk 'NF' | sort -u | paste -sd' ' -); \
+	pids=$$(printf "%s\n%s\n%s\n%s\n" "$$pids_file" "$$pids_bin" "$$pids_go" "$$pids_token" | tr ' ' '\n' | awk 'NF' | sort -u | paste -sd' ' -); \
 	if [ -n "$$pids" ]; then \
 		echo "Stopping existing bot process(es): $$pids"; \
 		kill $$pids 2>/dev/null || true; \
@@ -45,7 +51,8 @@ stop:
 		fi; \
 	else \
 		echo "No existing local bot process found"; \
-	fi
+	fi; \
+	rm -f "$(BOT_PID_FILE)"
 	@$(MAKE) core-stop
 
 core-up:
@@ -96,7 +103,11 @@ run: stop build core-up
 	token="$${token%\'}"; \
 	if [ -n "$$token" ]; then export TELEGRAM_BOT_TOKEN="$$token"; fi; \
 	echo "Starting bot from $(BIN)"; \
-	exec $(BIN)
+	"$(BIN)" & \
+	bot_pid=$$!; \
+	echo "$$bot_pid" >"$(BOT_PID_FILE)"; \
+	trap 'kill "$$bot_pid" 2>/dev/null || true; rm -f "$(BOT_PID_FILE)"' INT TERM EXIT; \
+	wait "$$bot_pid"
 
 local-erp-env:
 	@./scripts/setup_local_erp_env.sh

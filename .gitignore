@@ -1,4 +1,6 @@
 .env
+.bot.log
+.bot.pid
 .core.log
 .core.pid
 bin/
