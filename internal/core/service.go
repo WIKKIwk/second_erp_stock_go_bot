@@ -30,6 +30,7 @@ type ERPClient interface {
 	SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
 	SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]erpnext.Item, error)
 	ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
+	ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
 	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty float64) (erpnext.PurchaseReceiptSubmissionResult, error)
@@ -311,6 +312,34 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 			SentQty:      sentQty,
 			AcceptedQty:  0,
 			Status:       "pending",
+			CreatedLabel: item.PostingDate,
+		})
+	}
+	return result, nil
+}
+
+func (a *ERPAuthenticator) AdminActivity(ctx context.Context, limit int) ([]DispatchRecord, error) {
+	items, err := a.erp.ListTelegramPurchaseReceipts(ctx, a.baseURL, a.apiKey, a.apiSecret, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]DispatchRecord, 0, len(items))
+	for _, item := range items {
+		sentQty := item.Qty
+		if markerQty, ok := erpnext.ParseTelegramReceiptMarkerQty(item.SupplierDeliveryNote); ok && markerQty > sentQty {
+			sentQty = markerQty
+		}
+		status, acceptedQty := mapDispatchStatus(item, sentQty)
+		result = append(result, DispatchRecord{
+			ID:           item.Name,
+			SupplierName: item.SupplierName,
+			ItemCode:     item.ItemCode,
+			ItemName:     item.ItemName,
+			UOM:          item.UOM,
+			SentQty:      sentQty,
+			AcceptedQty:  acceptedQty,
+			Status:       status,
 			CreatedLabel: item.PostingDate,
 		})
 	}

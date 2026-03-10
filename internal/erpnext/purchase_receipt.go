@@ -266,6 +266,48 @@ func (c *Client) ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiK
 	return items, nil
 }
 
+func (c *Client) ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]PurchaseReceiptDraft, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	filtersJSON, _ := json.Marshal([][]interface{}{
+		{"supplier_delivery_note", "like", telegramReceiptMarkerPrefix + "%"},
+	})
+	params := url.Values{}
+	params.Set("fields", `["name"]`)
+	params.Set("filters", string(filtersJSON))
+	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
+	params.Set("order_by", "modified desc")
+
+	var payload struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	endpoint := normalized + "/api/resource/Purchase Receipt?" + params.Encode()
+	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+		return nil, err
+	}
+
+	items := make([]PurchaseReceiptDraft, 0, len(payload.Data))
+	for _, row := range payload.Data {
+		if strings.TrimSpace(row.Name) == "" {
+			continue
+		}
+		doc, err := c.GetPurchaseReceipt(ctx, normalized, apiKey, apiSecret, row.Name)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, doc)
+	}
+	return items, nil
+}
+
 func (c *Client) GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string) (PurchaseReceiptDraft, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {

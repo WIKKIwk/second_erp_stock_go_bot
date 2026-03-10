@@ -76,6 +76,21 @@ func (f *fakeERPClient) ListPendingPurchaseReceipts(_ context.Context, _, _, _ s
 	return nil, nil
 }
 
+func (f *fakeERPClient) ListTelegramPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return []erpnext.PurchaseReceiptDraft{
+		{
+			Name:                 "MAT-PRE-0001",
+			SupplierName:         "Abdulloh",
+			SupplierDeliveryNote: "TG:+998900000000|25",
+			ItemCode:             "ITEM-001",
+			ItemName:             "Rice",
+			Qty:                  25,
+			UOM:                  "Kg",
+			PostingDate:          "2026-03-10",
+		},
+	}, nil
+}
+
 func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
 	return nil, nil
 }
@@ -461,5 +476,42 @@ func TestServerAdminSupplierManagementFlow(t *testing.T) {
 	server.Handler().ServeHTTP(restoreResp, restoreReq)
 	if restoreResp.Code != http.StatusOK {
 		t.Fatalf("unexpected restore status: %d", restoreResp.Code)
+	}
+}
+
+func TestServerAdminActivity(t *testing.T) {
+	server := NewServer(NewERPAuthenticator(
+		&fakeERPClient{},
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{Role: RoleAdmin, DisplayName: "Admin"})
+	if err != nil {
+		t.Fatalf("failed to create admin session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/mobile/admin/activity", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", resp.Code)
+	}
+
+	var items []DispatchRecord
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(items) != 1 || items[0].SupplierName != "Abdulloh" {
+		t.Fatalf("unexpected activity payload: %+v", items)
 	}
 }
