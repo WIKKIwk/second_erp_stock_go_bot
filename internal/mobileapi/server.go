@@ -625,18 +625,30 @@ func (s *Server) handleAdminItems(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
 	}
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		query := strings.TrimSpace(r.URL.Query().Get("q"))
+		items, err := s.auth.AdminSearchItems(r.Context(), query, 30)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "admin items failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	case http.MethodPost:
+		var req AdminCreateItemRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+			return
+		}
+		item, err := s.auth.AdminCreateItem(r.Context(), req.Code, req.Name, req.UOM)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "admin item create failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
 	}
-
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	items, err := s.auth.AdminSearchItems(r.Context(), query, 30)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "admin items failed"})
-		return
-	}
-	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (Principal, bool) {

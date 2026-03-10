@@ -41,6 +41,16 @@ func (f *fakeERPClient) GetItemsByCodes(_ context.Context, _, _, _ string, itemC
 	return result, nil
 }
 
+func (f *fakeERPClient) CreateItem(_ context.Context, _, _, _ string, input erpnext.CreateItemInput) (erpnext.Item, error) {
+	item := erpnext.Item{
+		Code: input.Code,
+		Name: input.Name,
+		UOM:  input.UOM,
+	}
+	f.items = append(f.items, item)
+	return item, nil
+}
+
 func (f *fakeERPClient) SearchWarehouses(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Warehouse, error) {
 	return []erpnext.Warehouse{{Name: "Stores - A"}}, nil
 }
@@ -414,6 +424,19 @@ func TestServerAdminSupplierManagementFlow(t *testing.T) {
 	}
 	if detail.Code == "" {
 		t.Fatalf("expected regenerated code, got %+v", detail)
+	}
+
+	createItemReq := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/mobile/admin/items",
+		bytes.NewReader([]byte(`{"code":"ITEM-003","name":"Flour","uom":"Kg"}`)),
+	)
+	createItemReq.Header.Set("Authorization", "Bearer "+token)
+	createItemReq.Header.Set("Content-Type", "application/json")
+	createItemResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(createItemResp, createItemReq)
+	if createItemResp.Code != http.StatusOK {
+		t.Fatalf("unexpected item create status: %d", createItemResp.Code)
 	}
 
 	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/mobile/admin/suppliers/remove?ref=SUP-001", nil)

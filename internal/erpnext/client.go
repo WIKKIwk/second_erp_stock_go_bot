@@ -24,6 +24,12 @@ type Item struct {
 	UOM  string
 }
 
+type CreateItemInput struct {
+	Code string
+	Name string
+	UOM  string
+}
+
 type Warehouse struct {
 	Name string
 }
@@ -107,6 +113,56 @@ func (c *Client) SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, qu
 		}
 	}
 	return items, nil
+}
+
+func (c *Client) CreateItem(ctx context.Context, baseURL, apiKey, apiSecret string, input CreateItemInput) (Item, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return Item{}, err
+	}
+
+	code := strings.TrimSpace(input.Code)
+	name := strings.TrimSpace(input.Name)
+	uom := strings.TrimSpace(input.UOM)
+	if code == "" {
+		return Item{}, fmt.Errorf("item code is required")
+	}
+	if name == "" {
+		name = code
+	}
+	if uom == "" {
+		uom = "Nos"
+	}
+
+	payload := map[string]interface{}{
+		"item_code":     code,
+		"item_name":     name,
+		"stock_uom":     uom,
+		"is_stock_item": 1,
+		"item_group":    "All Item Groups",
+	}
+
+	var response struct {
+		Data struct {
+			Name     string `json:"name"`
+			ItemName string `json:"item_name"`
+			StockUOM string `json:"stock_uom"`
+		} `json:"data"`
+	}
+	endpoint := normalized + "/api/resource/Item"
+	if err := c.doJSONRequest(ctx, http.MethodPost, endpoint, apiKey, apiSecret, payload, &response); err != nil {
+		return Item{}, err
+	}
+
+	itemName := strings.TrimSpace(response.Data.ItemName)
+	if itemName == "" {
+		itemName = strings.TrimSpace(response.Data.Name)
+	}
+	return Item{
+		Code: strings.TrimSpace(response.Data.Name),
+		Name: itemName,
+		UOM:  strings.TrimSpace(response.Data.StockUOM),
+	}, nil
 }
 
 func (c *Client) searchItemsByQuery(ctx context.Context, normalized, apiKey, apiSecret, query string, limit int) ([]Item, error) {

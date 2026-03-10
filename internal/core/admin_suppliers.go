@@ -116,6 +116,26 @@ func (a *ERPAuthenticator) AdminSearchItems(ctx context.Context, query string, l
 	return a.mapSupplierItems(ctx, items)
 }
 
+func (a *ERPAuthenticator) AdminCreateItem(ctx context.Context, code, name, uom string) (SupplierItem, error) {
+	item, err := a.erp.CreateItem(ctx, a.baseURL, a.apiKey, a.apiSecret, erpnext.CreateItemInput{
+		Code: strings.TrimSpace(code),
+		Name: strings.TrimSpace(name),
+		UOM:  strings.TrimSpace(uom),
+	})
+	if err != nil {
+		return SupplierItem{}, err
+	}
+
+	items, err := a.mapSupplierItems(ctx, []erpnext.Item{item})
+	if err != nil {
+		return SupplierItem{}, err
+	}
+	if len(items) == 0 {
+		return SupplierItem{}, fmt.Errorf("item create returned empty result")
+	}
+	return items[0], nil
+}
+
 func (a *ERPAuthenticator) AdminUpdateSupplierItems(ctx context.Context, ref string, itemCodes []string) (AdminSupplierDetail, error) {
 	item, state, err := a.findSupplierForAdmin(ctx, ref)
 	if err != nil {

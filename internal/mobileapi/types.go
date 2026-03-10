@@ -26,3 +26,4 @@ type AdminSupplierSummary = core.AdminSupplierSummary
 type AdminSupplierDetail = core.AdminSupplierDetail
 type AdminSupplierStatusUpdateRequest = core.AdminSupplierStatusUpdateRequest
 type AdminSupplierItemsUpdateRequest = core.AdminSupplierItemsUpdateRequest
+type AdminCreateItemRequest = core.AdminCreateItemRequest

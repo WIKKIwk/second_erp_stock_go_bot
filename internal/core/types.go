@@ -117,3 +117,9 @@ type AdminSupplierStatusUpdateRequest struct {
 type AdminSupplierItemsUpdateRequest struct {
 	ItemCodes []string `json:"item_codes"`
 }
+
+type AdminCreateItemRequest struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+	UOM  string `json:"uom"`
+}
