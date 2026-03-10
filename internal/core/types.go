@@ -84,6 +84,7 @@ type AdminSupplier struct {
 	Phone             string   `json:"phone"`
 	Code              string   `json:"code"`
 	Blocked           bool     `json:"blocked"`
+	Removed           bool     `json:"removed"`
 	AssignedItemCodes []string `json:"assigned_item_codes"`
 	AssignedItemCount int      `json:"assigned_item_count"`
 }
@@ -105,6 +106,7 @@ type AdminSupplierDetail struct {
 	Phone         string         `json:"phone"`
 	Code          string         `json:"code"`
 	Blocked       bool           `json:"blocked"`
+	Removed       bool           `json:"removed"`
 	AssignedItems []SupplierItem `json:"assigned_items"`
 }
 

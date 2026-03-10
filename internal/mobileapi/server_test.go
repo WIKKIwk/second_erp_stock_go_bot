@@ -423,4 +423,20 @@ func TestServerAdminSupplierManagementFlow(t *testing.T) {
 	if removeResp.Code != http.StatusOK {
 		t.Fatalf("unexpected remove status: %d", removeResp.Code)
 	}
+
+	inactiveReq := httptest.NewRequest(http.MethodGet, "/v1/mobile/admin/suppliers/inactive", nil)
+	inactiveReq.Header.Set("Authorization", "Bearer "+token)
+	inactiveResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(inactiveResp, inactiveReq)
+	if inactiveResp.Code != http.StatusOK {
+		t.Fatalf("unexpected inactive list status: %d", inactiveResp.Code)
+	}
+
+	restoreReq := httptest.NewRequest(http.MethodPost, "/v1/mobile/admin/suppliers/restore?ref=SUP-001", nil)
+	restoreReq.Header.Set("Authorization", "Bearer "+token)
+	restoreResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(restoreResp, restoreReq)
+	if restoreResp.Code != http.StatusOK {
+		t.Fatalf("unexpected restore status: %d", restoreResp.Code)
+	}
 }

@@ -18,7 +18,7 @@ const supplierCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 var ErrAdminSupplierNotFound = errors.New("admin supplier not found")
 
 func (a *ERPAuthenticator) AdminSupplierSummary(ctx context.Context, limit int) (AdminSupplierSummary, error) {
-	items, err := a.AdminSuppliers(ctx, limit)
+	items, err := a.adminSuppliersWithOptions(ctx, limit, true)
 	if err != nil {
 		return AdminSupplierSummary{}, err
 	}
@@ -37,6 +37,26 @@ func (a *ERPAuthenticator) AdminSupplierSummary(ctx context.Context, limit int) 
 }
 
 func (a *ERPAuthenticator) AdminSuppliers(ctx context.Context, limit int) ([]AdminSupplier, error) {
+	return a.adminSuppliersWithOptions(ctx, limit, false)
+}
+
+func (a *ERPAuthenticator) AdminInactiveSuppliers(ctx context.Context, limit int) ([]AdminSupplier, error) {
+	items, err := a.adminSuppliersWithOptions(ctx, limit, true)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]AdminSupplier, 0, len(items))
+	for _, item := range items {
+		if !item.Blocked && !item.Removed {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (a *ERPAuthenticator) adminSuppliersWithOptions(ctx context.Context, limit int, includeRemoved bool) ([]AdminSupplier, error) {
 	items, err := a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, "", limit)
 	if err != nil {
 		return nil, err
@@ -48,7 +68,7 @@ func (a *ERPAuthenticator) AdminSuppliers(ctx context.Context, limit int) ([]Adm
 		if err != nil {
 			return nil, err
 		}
-		if state.Removed {
+		if state.Removed && !includeRemoved {
 			continue
 		}
 
@@ -83,6 +103,7 @@ func (a *ERPAuthenticator) AdminSupplierDetail(ctx context.Context, ref string) 
 		Phone:         item.Phone,
 		Code:          code,
 		Blocked:       state.Blocked,
+		Removed:       state.Removed,
 		AssignedItems: assignedItems,
 	}, nil
 }
@@ -189,6 +210,20 @@ func (a *ERPAuthenticator) AdminRemoveSupplier(ctx context.Context, ref string) 
 	return a.saveAdminSupplierState(item.ID, state)
 }
 
+func (a *ERPAuthenticator) AdminRestoreSupplier(ctx context.Context, ref string) (AdminSupplierDetail, error) {
+	item, state, err := a.findSupplierForAdminIncludingRemoved(ctx, ref)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	state.Removed = false
+	state.Blocked = false
+	state.UpdatedAt = time.Now().UTC()
+	if err := a.saveAdminSupplierState(item.ID, state); err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	return a.AdminSupplierDetail(ctx, item.ID)
+}
+
 func (a *ERPAuthenticator) AdminCreateSupplier(ctx context.Context, name, phone string) (AdminSupplier, error) {
 	item, err := a.erp.EnsureSupplier(ctx, a.baseURL, a.apiKey, a.apiSecret, erpnext.CreateSupplierInput{
 		Name:  strings.TrimSpace(name),
@@ -290,6 +325,7 @@ func (a *ERPAuthenticator) buildAdminSupplier(item erpnext.Supplier, state Admin
 		Phone:             item.Phone,
 		Code:              code,
 		Blocked:           state.Blocked,
+		Removed:           state.Removed,
 		AssignedItemCodes: append([]string(nil), state.AssignedItemCodes...),
 		AssignedItemCount: len(state.AssignedItemCodes),
 	}, nil
@@ -311,6 +347,14 @@ func (a *ERPAuthenticator) supplierAccessCode(item erpnext.Supplier, state Admin
 }
 
 func (a *ERPAuthenticator) findSupplierForAdmin(ctx context.Context, ref string) (erpnext.Supplier, AdminSupplierState, error) {
+	return a.findSupplierForAdminWithRemovedOption(ctx, ref, false)
+}
+
+func (a *ERPAuthenticator) findSupplierForAdminIncludingRemoved(ctx context.Context, ref string) (erpnext.Supplier, AdminSupplierState, error) {
+	return a.findSupplierForAdminWithRemovedOption(ctx, ref, true)
+}
+
+func (a *ERPAuthenticator) findSupplierForAdminWithRemovedOption(ctx context.Context, ref string, includeRemoved bool) (erpnext.Supplier, AdminSupplierState, error) {
 	doc, err := a.erp.GetSupplier(ctx, a.baseURL, a.apiKey, a.apiSecret, strings.TrimSpace(ref))
 	if err != nil {
 		return erpnext.Supplier{}, AdminSupplierState{}, err
@@ -323,7 +367,7 @@ func (a *ERPAuthenticator) findSupplierForAdmin(ctx context.Context, ref string)
 	if err != nil {
 		return erpnext.Supplier{}, AdminSupplierState{}, err
 	}
-	if state.Removed {
+	if state.Removed && !includeRemoved {
 		return erpnext.Supplier{}, AdminSupplierState{}, ErrAdminSupplierNotFound
 	}
 	return doc, state, nil
