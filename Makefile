@@ -1,8 +1,11 @@
 APP := ./cmd/bot
 BIN_DIR := ./bin
 BIN := $(BIN_DIR)/erpnext-bot
+CORE_ADDR ?= http://127.0.0.1:8081
+CORE_PID_FILE := .core.pid
+CORE_LOG_FILE := .core.log
 
-.PHONY: run stop build test tidy fmt local-erp-env local-erp-check run-local-erp run-mobile-api
+.PHONY: run stop build test tidy fmt local-erp-env local-erp-check run-local-erp run-mobile-api core-up core-stop
 
 token_from_env = $$( [ -f .env ] && sed -n 's/^TELEGRAM_BOT_TOKEN=//p' .env | head -n1 )
 
@@ -43,8 +46,49 @@ stop:
 	else \
 		echo "No existing local bot process found"; \
 	fi
+	@$(MAKE) core-stop
 
-run: stop build
+core-up:
+	@if curl -fsS "$(CORE_ADDR)/healthz" >/dev/null 2>&1; then \
+		echo "Core already running at $(CORE_ADDR)"; \
+	else \
+		echo "Starting core on $(CORE_ADDR)"; \
+		setsid go run ./cmd/mobileapi >"$(CORE_LOG_FILE)" 2>&1 < /dev/null & \
+		echo $$! >"$(CORE_PID_FILE)"; \
+		for _ in $$(seq 1 40); do \
+			if curl -fsS "$(CORE_ADDR)/healthz" >/dev/null 2>&1; then \
+				echo "Core ready at $(CORE_ADDR)"; \
+				exit 0; \
+			fi; \
+			sleep 0.5; \
+		done; \
+		echo "Core failed to start; see $(CORE_LOG_FILE)" >&2; \
+		exit 1; \
+	fi
+
+core-stop:
+	@pids_file=""; \
+	if [ -f "$(CORE_PID_FILE)" ]; then \
+		pids_file="$$(cat "$(CORE_PID_FILE)" 2>/dev/null || true)"; \
+	fi; \
+	pids_go=$$(pgrep -x -f "go run ./cmd/mobileapi" || true); \
+	pids_port=$$(lsof -t -iTCP:8081 -sTCP:LISTEN -n -P 2>/dev/null || true); \
+	pids=$$(printf "%s\n%s\n%s\n" "$$pids_file" "$$pids_go" "$$pids_port" | tr ' ' '\n' | awk 'NF' | sort -u | paste -sd' ' -); \
+	if [ -n "$$pids" ]; then \
+		echo "Stopping existing core process(es): $$pids"; \
+		kill $$pids 2>/dev/null || true; \
+		sleep 1; \
+		alive=$$(for pid in $$pids; do kill -0 $$pid 2>/dev/null && echo $$pid; done); \
+		if [ -n "$$alive" ]; then \
+			echo "Force killing process(es): $$alive"; \
+			kill -9 $$alive 2>/dev/null || true; \
+		fi; \
+	else \
+		echo "No existing local core process found"; \
+	fi; \
+	rm -f "$(CORE_PID_FILE)"
+
+run: stop build core-up
 	@token="$(token_from_env)"; \
 	token="$${token#\"}"; \
 	token="$${token%\"}"; \

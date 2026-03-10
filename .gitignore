@@ -1,4 +1,6 @@
 .env
+.core.log
+.core.pid
 bin/
 data/
 mobile_app/
