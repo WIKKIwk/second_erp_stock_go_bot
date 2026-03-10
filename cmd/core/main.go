@@ -41,6 +41,12 @@ func main() {
 		os.Getenv("MOBILE_DEV_WERKA_NAME"),
 		core.NewProfileStore(profileStorePath),
 	)
+	service.SetAdminIdentity(
+		cfg.AdminkaPhone,
+		cfg.AdminkaName,
+		cfg.AdminPassword,
+		config.NewDotEnvPersister(".env"),
+	)
 
 	server := mobileapi.NewServer(service)
 	log.Printf("core listening on %s", addr)

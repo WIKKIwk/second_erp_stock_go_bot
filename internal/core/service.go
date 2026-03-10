@@ -43,7 +43,15 @@ type ERPAuthenticator struct {
 	werkaCode        string
 	werkaPhone       string
 	werkaName        string
+	adminPhone       string
+	adminName        string
+	adminCode        string
 	profiles         *ProfileStore
+	envPersister     EnvPersister
+}
+
+type EnvPersister interface {
+	Upsert(values map[string]string) error
 }
 
 func NewERPAuthenticator(
@@ -84,15 +92,44 @@ func NewERPAuthenticator(
 	}
 }
 
-func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Principal, error) {
-	role, err := a.inferRole(code)
-	if err != nil {
-		return Principal{}, err
+func (a *ERPAuthenticator) SetAdminIdentity(phone, name, code string, envPersister EnvPersister) {
+	normalizedPhone, err := suplier.NormalizePhone(phone)
+	if err == nil {
+		a.adminPhone = normalizedPhone
+	} else {
+		a.adminPhone = strings.TrimSpace(phone)
 	}
+	a.adminName = strings.TrimSpace(name)
+	a.adminCode = strings.TrimSpace(code)
+	a.envPersister = envPersister
+}
 
+func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Principal, error) {
 	normalizedPhone, err := suplier.NormalizePhone(phone)
 	if err != nil {
 		return Principal{}, ErrInvalidCredentials
+	}
+
+	if strings.TrimSpace(a.adminPhone) != "" &&
+		strings.EqualFold(strings.TrimSpace(a.adminPhone), normalizedPhone) &&
+		strings.TrimSpace(a.adminCode) != "" &&
+		strings.TrimSpace(code) == strings.TrimSpace(a.adminCode) {
+		name := strings.TrimSpace(a.adminName)
+		if name == "" {
+			name = "Admin"
+		}
+		return Principal{
+			Role:        RoleAdmin,
+			DisplayName: name,
+			LegalName:   name,
+			Ref:         "admin",
+			Phone:       normalizedPhone,
+		}, nil
+	}
+
+	role, err := a.inferRole(code)
+	if err != nil {
+		return Principal{}, err
 	}
 
 	switch role {
@@ -355,6 +392,71 @@ func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string,
 		Status:       dispatchStatusFromQuantities(result.SentQty, result.AcceptedQty),
 		CreatedLabel: result.Name,
 	}, nil
+}
+
+func (a *ERPAuthenticator) AdminSettings() AdminSettings {
+	return AdminSettings{
+		ERPURL:                 a.baseURL,
+		ERPAPIKey:              a.apiKey,
+		ERPAPISecret:           a.apiSecret,
+		DefaultTargetWarehouse: a.defaultWarehouse,
+		DefaultUOM:             "Kg",
+		WerkaPhone:             a.werkaPhone,
+		WerkaName:              a.werkaName,
+		AdminPhone:             a.adminPhone,
+		AdminName:              a.adminName,
+	}
+}
+
+func (a *ERPAuthenticator) UpdateAdminSettings(input AdminSettings) error {
+	a.baseURL = strings.TrimSpace(input.ERPURL)
+	a.apiKey = strings.TrimSpace(input.ERPAPIKey)
+	a.apiSecret = strings.TrimSpace(input.ERPAPISecret)
+	a.defaultWarehouse = strings.TrimSpace(input.DefaultTargetWarehouse)
+	a.werkaPhone = strings.TrimSpace(input.WerkaPhone)
+	a.werkaName = strings.TrimSpace(input.WerkaName)
+	a.adminPhone = strings.TrimSpace(input.AdminPhone)
+	a.adminName = strings.TrimSpace(input.AdminName)
+
+	if a.envPersister != nil {
+		return a.envPersister.Upsert(map[string]string{
+			"ERP_URL":                      a.baseURL,
+			"ERP_API_KEY":                  a.apiKey,
+			"ERP_API_SECRET":               a.apiSecret,
+			"ERP_DEFAULT_TARGET_WAREHOUSE": a.defaultWarehouse,
+			"ERP_DEFAULT_UOM":              strings.TrimSpace(input.DefaultUOM),
+			"WERKA_PHONE":                  a.werkaPhone,
+			"WERKA_NAME":                   a.werkaName,
+			"ADMINKA_PHONE":                a.adminPhone,
+			"ADMINKA_NAME":                 a.adminName,
+		})
+	}
+	return nil
+}
+
+func (a *ERPAuthenticator) AdminSuppliers(ctx context.Context, limit int) ([]AdminSupplier, error) {
+	items, err := a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, "", limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AdminSupplier, 0, len(items))
+	for _, item := range items {
+		creds, err := suplier.GenerateAccessCredentials(suplier.Supplier{
+			Ref:   item.ID,
+			Name:  item.Name,
+			Phone: item.Phone,
+		})
+		if err != nil {
+			continue
+		}
+		result = append(result, AdminSupplier{
+			Ref:   item.ID,
+			Name:  item.Name,
+			Phone: item.Phone,
+			Code:  creds.Code,
+		})
+	}
+	return result, nil
 }
 
 type SessionManager struct {

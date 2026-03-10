@@ -7,6 +7,7 @@ type PrincipalRole = core.PrincipalRole
 const (
 	RoleSupplier = core.RoleSupplier
 	RoleWerka    = core.RoleWerka
+	RoleAdmin    = core.RoleAdmin
 )
 
 type Principal = core.Principal
@@ -18,3 +19,5 @@ type SupplierItem = core.SupplierItem
 type CreateDispatchRequest = core.CreateDispatchRequest
 type ConfirmReceiptRequest = core.ConfirmReceiptRequest
 type ProfileUpdateRequest = core.ProfileUpdateRequest
+type AdminSettings = core.AdminSettings
+type AdminSupplier = core.AdminSupplier

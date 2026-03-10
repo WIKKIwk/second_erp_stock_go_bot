@@ -7,6 +7,7 @@ type PrincipalRole string
 const (
 	RoleSupplier PrincipalRole = "supplier"
 	RoleWerka    PrincipalRole = "werka"
+	RoleAdmin    PrincipalRole = "admin"
 )
 
 type Principal struct {
@@ -63,4 +64,23 @@ type ConfirmReceiptRequest struct {
 
 type ProfileUpdateRequest struct {
 	Nickname string `json:"nickname"`
+}
+
+type AdminSettings struct {
+	ERPURL                 string `json:"erp_url"`
+	ERPAPIKey              string `json:"erp_api_key"`
+	ERPAPISecret           string `json:"erp_api_secret"`
+	DefaultTargetWarehouse string `json:"default_target_warehouse"`
+	DefaultUOM             string `json:"default_uom"`
+	WerkaPhone             string `json:"werka_phone"`
+	WerkaName              string `json:"werka_name"`
+	AdminPhone             string `json:"admin_phone"`
+	AdminName              string `json:"admin_name"`
+}
+
+type AdminSupplier struct {
+	Ref   string `json:"ref"`
+	Name  string `json:"name"`
+	Phone string `json:"phone"`
+	Code  string `json:"code"`
 }

@@ -34,6 +34,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/supplier/dispatch", s.handleCreateDispatch)
 	mux.HandleFunc("/v1/mobile/werka/pending", s.handleWerkaPending)
 	mux.HandleFunc("/v1/mobile/werka/confirm", s.handleWerkaConfirm)
+	mux.HandleFunc("/v1/mobile/admin/settings", s.handleAdminSettings)
+	mux.HandleFunc("/v1/mobile/admin/suppliers", s.handleAdminSuppliers)
 	return mux
 }
 
@@ -295,6 +297,52 @@ func (s *Server) handleWerkaConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if err := requireRole(principal, RoleAdmin); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.auth.AdminSettings())
+	case http.MethodPut:
+		var req AdminSettings
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+			return
+		}
+		if err := s.auth.UpdateAdminSettings(req); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "settings update failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, s.auth.AdminSettings())
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+func (s *Server) handleAdminSuppliers(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if err := requireRole(principal, RoleAdmin); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	items, err := s.auth.AdminSuppliers(r.Context(), 100)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "suppliers fetch failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (Principal, bool) {
