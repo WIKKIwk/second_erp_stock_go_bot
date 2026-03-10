@@ -342,7 +342,25 @@ func (s *Server) handleAdminSuppliers(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "suppliers fetch failed"})
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, items)
+		return
+	}
+	if r.Method == http.MethodPost {
+		var req AdminCreateSupplierRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+			return
+		}
+		item, err := s.auth.AdminCreateSupplier(r.Context(), req.Name, req.Phone)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "supplier create failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (Principal, bool) {

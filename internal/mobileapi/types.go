@@ -21,3 +21,4 @@ type ConfirmReceiptRequest = core.ConfirmReceiptRequest
 type ProfileUpdateRequest = core.ProfileUpdateRequest
 type AdminSettings = core.AdminSettings
 type AdminSupplier = core.AdminSupplier
+type AdminCreateSupplierRequest = core.AdminCreateSupplierRequest

@@ -26,6 +26,10 @@ func (f *fakeERPClient) SearchWarehouses(_ context.Context, _, _, _, _ string, _
 	return []erpnext.Warehouse{{Name: "Stores - A"}}, nil
 }
 
+func (f *fakeERPClient) EnsureSupplier(_ context.Context, _, _, _ string, input erpnext.CreateSupplierInput) (erpnext.Supplier, error) {
+	return erpnext.Supplier{ID: input.Name, Name: input.Name, Phone: input.Phone}, nil
+}
+
 func (f *fakeERPClient) SearchSupplierItems(_ context.Context, _, _, _, _, _ string, _ int) ([]erpnext.Item, error) {
 	return nil, nil
 }

@@ -84,3 +84,8 @@ type AdminSupplier struct {
 	Phone string `json:"phone"`
 	Code  string `json:"code"`
 }
+
+type AdminCreateSupplierRequest struct {
+	Name  string `json:"name"`
+	Phone string `json:"phone"`
+}

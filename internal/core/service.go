@@ -23,6 +23,7 @@ var (
 type ERPClient interface {
 	SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error)
 	GetSupplier(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error)
+	EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateSupplierInput) (erpnext.Supplier, error)
 	SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
 	SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]erpnext.Item, error)
 	ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
@@ -457,6 +458,32 @@ func (a *ERPAuthenticator) AdminSuppliers(ctx context.Context, limit int) ([]Adm
 		})
 	}
 	return result, nil
+}
+
+func (a *ERPAuthenticator) AdminCreateSupplier(ctx context.Context, name, phone string) (AdminSupplier, error) {
+	item, err := a.erp.EnsureSupplier(ctx, a.baseURL, a.apiKey, a.apiSecret, erpnext.CreateSupplierInput{
+		Name:  strings.TrimSpace(name),
+		Phone: strings.TrimSpace(phone),
+	})
+	if err != nil {
+		return AdminSupplier{}, err
+	}
+
+	creds, err := suplier.GenerateAccessCredentials(suplier.Supplier{
+		Ref:   item.ID,
+		Name:  item.Name,
+		Phone: item.Phone,
+	})
+	if err != nil {
+		return AdminSupplier{}, err
+	}
+
+	return AdminSupplier{
+		Ref:   item.ID,
+		Name:  item.Name,
+		Phone: item.Phone,
+		Code:  creds.Code,
+	}, nil
 }
 
 type SessionManager struct {
