@@ -3,9 +3,10 @@ package mobileapi
 import "erpnext_stock_telegram/internal/core"
 
 var (
-	ErrInvalidCredentials = core.ErrInvalidCredentials
-	ErrInvalidRole        = core.ErrInvalidRole
-	ErrUnauthorized       = core.ErrUnauthorized
+	ErrInvalidCredentials    = core.ErrInvalidCredentials
+	ErrInvalidRole           = core.ErrInvalidRole
+	ErrUnauthorized          = core.ErrUnauthorized
+	ErrAdminSupplierNotFound = core.ErrAdminSupplierNotFound
 )
 
 type ERPClient = core.ERPClient
@@ -24,6 +25,7 @@ func NewERPAuthenticator(
 	werkaPhone string,
 	werkaName string,
 	profiles *ProfileStore,
+	supplierAdmin *AdminSupplierStore,
 ) *ERPAuthenticator {
 	return core.NewERPAuthenticator(
 		erp,
@@ -37,6 +39,7 @@ func NewERPAuthenticator(
 		werkaPhone,
 		werkaName,
 		profiles,
+		supplierAdmin,
 	)
 }
 

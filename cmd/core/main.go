@@ -21,6 +21,10 @@ func main() {
 	if profileStorePath == "" {
 		profileStorePath = "data/mobile_profile_prefs.json"
 	}
+	adminSupplierStorePath := strings.TrimSpace(os.Getenv("MOBILE_API_ADMIN_SUPPLIER_STORE_PATH"))
+	if adminSupplierStorePath == "" {
+		adminSupplierStorePath = "data/mobile_admin_suppliers.json"
+	}
 
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -40,6 +44,7 @@ func main() {
 		cfg.WerkaPhone,
 		os.Getenv("MOBILE_DEV_WERKA_NAME"),
 		core.NewProfileStore(profileStorePath),
+		core.NewAdminSupplierStore(adminSupplierStorePath),
 	)
 	service.SetAdminIdentity(
 		"+998880000000",

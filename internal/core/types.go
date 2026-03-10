@@ -79,13 +79,39 @@ type AdminSettings struct {
 }
 
 type AdminSupplier struct {
-	Ref   string `json:"ref"`
-	Name  string `json:"name"`
-	Phone string `json:"phone"`
-	Code  string `json:"code"`
+	Ref               string   `json:"ref"`
+	Name              string   `json:"name"`
+	Phone             string   `json:"phone"`
+	Code              string   `json:"code"`
+	Blocked           bool     `json:"blocked"`
+	AssignedItemCodes []string `json:"assigned_item_codes"`
+	AssignedItemCount int      `json:"assigned_item_count"`
 }
 
 type AdminCreateSupplierRequest struct {
 	Name  string `json:"name"`
 	Phone string `json:"phone"`
+}
+
+type AdminSupplierSummary struct {
+	TotalSuppliers   int `json:"total_suppliers"`
+	ActiveSuppliers  int `json:"active_suppliers"`
+	BlockedSuppliers int `json:"blocked_suppliers"`
+}
+
+type AdminSupplierDetail struct {
+	Ref           string         `json:"ref"`
+	Name          string         `json:"name"`
+	Phone         string         `json:"phone"`
+	Code          string         `json:"code"`
+	Blocked       bool           `json:"blocked"`
+	AssignedItems []SupplierItem `json:"assigned_items"`
+}
+
+type AdminSupplierStatusUpdateRequest struct {
+	Blocked bool `json:"blocked"`
+}
+
+type AdminSupplierItemsUpdateRequest struct {
+	ItemCodes []string `json:"item_codes"`
 }

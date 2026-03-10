@@ -92,6 +92,14 @@ func (c *Client) SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSe
 	return filtered, nil
 }
 
+func (c *Client) GetItemsByCodes(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]Item, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	return c.searchItemsByCodes(ctx, normalized, apiKey, apiSecret, itemCodes, "", len(itemCodes))
+}
+
 func (c *Client) CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input CreatePurchaseReceiptInput) (PurchaseReceiptDraft, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {

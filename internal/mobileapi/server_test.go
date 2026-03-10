@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"erpnext_stock_telegram/internal/erpnext"
@@ -15,11 +16,29 @@ import (
 
 type fakeERPClient struct {
 	suppliers         []erpnext.Supplier
+	items             []erpnext.Item
 	uploadedAvatarURL string
+}
+
+func (f *fakeERPClient) SearchItems(_ context.Context, _, _, _, query string, limit int) ([]erpnext.Item, error) {
+	return filterFakeItems(f.items, query, limit), nil
 }
 
 func (f *fakeERPClient) SearchSuppliers(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Supplier, error) {
 	return f.suppliers, nil
+}
+
+func (f *fakeERPClient) GetItemsByCodes(_ context.Context, _, _, _ string, itemCodes []string) ([]erpnext.Item, error) {
+	result := make([]erpnext.Item, 0, len(itemCodes))
+	for _, code := range itemCodes {
+		for _, item := range f.items {
+			if item.Code == code {
+				result = append(result, item)
+				break
+			}
+		}
+	}
+	return result, nil
 }
 
 func (f *fakeERPClient) SearchWarehouses(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.Warehouse, error) {
@@ -31,7 +50,7 @@ func (f *fakeERPClient) EnsureSupplier(_ context.Context, _, _, _ string, input 
 }
 
 func (f *fakeERPClient) SearchSupplierItems(_ context.Context, _, _, _, _, _ string, _ int) ([]erpnext.Item, error) {
-	return nil, nil
+	return f.items, nil
 }
 
 func (f *fakeERPClient) GetSupplier(_ context.Context, _, _, _, id string) (erpnext.Supplier, error) {
@@ -72,6 +91,27 @@ func (f *fakeERPClient) UploadSupplierImage(_ context.Context, _, _, _, supplier
 	return fileURL, nil
 }
 
+func filterFakeItems(items []erpnext.Item, query string, limit int) []erpnext.Item {
+	if limit <= 0 || limit > len(items) {
+		limit = len(items)
+	}
+	if query == "" {
+		return append([]erpnext.Item(nil), items[:limit]...)
+	}
+	lowerQuery := strings.ToLower(query)
+	result := make([]erpnext.Item, 0, limit)
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.Code), lowerQuery) ||
+			strings.Contains(strings.ToLower(item.Name), lowerQuery) {
+			result = append(result, item)
+		}
+		if len(result) >= limit {
+			break
+		}
+	}
+	return result
+}
+
 func TestServerLoginAndMeFlow(t *testing.T) {
 	creds, err := suplier.GenerateAccessCredentials(suplier.Supplier{
 		Ref:   "SUP-001",
@@ -97,6 +137,7 @@ func TestServerLoginAndMeFlow(t *testing.T) {
 		"20WERKA0001",
 		"+998901111111",
 		"Werka",
+		nil,
 		nil,
 	))
 	ts := httptest.NewServer(server.Handler())
@@ -153,6 +194,7 @@ func TestServerLogoutInvalidatesSession(t *testing.T) {
 		"+998901111111",
 		"Werka",
 		nil,
+		nil,
 	))
 	token, err := server.sessions.Create(Principal{Role: RoleSupplier, DisplayName: "Abdulloh"})
 	if err != nil {
@@ -195,6 +237,7 @@ func TestServerProfileUpdateAndAvatarFlow(t *testing.T) {
 		"+998901111111",
 		"Werka",
 		profiles,
+		nil,
 	))
 	ts := httptest.NewServer(server.Handler())
 	defer ts.Close()
@@ -277,5 +320,107 @@ func TestServerProfileUpdateAndAvatarFlow(t *testing.T) {
 	}
 	if fakeERP.uploadedAvatarURL == "" {
 		t.Fatal("expected fake ERP upload to run")
+	}
+}
+
+func TestServerAdminSupplierManagementFlow(t *testing.T) {
+	adminStore := NewAdminSupplierStore(t.TempDir() + "/admin_suppliers.json")
+	server := NewServer(NewERPAuthenticator(
+		&fakeERPClient{
+			suppliers: []erpnext.Supplier{
+				{ID: "SUP-001", Name: "Abdulloh", Phone: "+998901234567"},
+			},
+			items: []erpnext.Item{
+				{Code: "ITEM-001", Name: "Rice", UOM: "Kg"},
+				{Code: "ITEM-002", Name: "Oil", UOM: "L"},
+			},
+		},
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		adminStore,
+	))
+	token, err := server.sessions.Create(Principal{Role: RoleAdmin, DisplayName: "Admin"})
+	if err != nil {
+		t.Fatalf("failed to create admin session: %v", err)
+	}
+
+	summaryReq := httptest.NewRequest(http.MethodGet, "/v1/mobile/admin/suppliers/summary", nil)
+	summaryReq.Header.Set("Authorization", "Bearer "+token)
+	summaryResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(summaryResp, summaryReq)
+	if summaryResp.Code != http.StatusOK {
+		t.Fatalf("unexpected summary status: %d", summaryResp.Code)
+	}
+
+	statusReq := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/mobile/admin/suppliers/status?ref=SUP-001",
+		bytes.NewReader([]byte(`{"blocked":true}`)),
+	)
+	statusReq.Header.Set("Authorization", "Bearer "+token)
+	statusReq.Header.Set("Content-Type", "application/json")
+	statusResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(statusResp, statusReq)
+	if statusResp.Code != http.StatusOK {
+		t.Fatalf("unexpected status update code: %d", statusResp.Code)
+	}
+
+	itemsReq := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/mobile/admin/suppliers/items?ref=SUP-001",
+		bytes.NewReader([]byte(`{"item_codes":["ITEM-001","ITEM-002"]}`)),
+	)
+	itemsReq.Header.Set("Authorization", "Bearer "+token)
+	itemsReq.Header.Set("Content-Type", "application/json")
+	itemsResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(itemsResp, itemsReq)
+	if itemsResp.Code != http.StatusOK {
+		t.Fatalf("unexpected item update code: %d", itemsResp.Code)
+	}
+
+	codeReq := httptest.NewRequest(http.MethodPost, "/v1/mobile/admin/suppliers/code/regenerate?ref=SUP-001", nil)
+	codeReq.Header.Set("Authorization", "Bearer "+token)
+	codeResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(codeResp, codeReq)
+	if codeResp.Code != http.StatusOK {
+		t.Fatalf("unexpected code regenerate status: %d", codeResp.Code)
+	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/v1/mobile/admin/suppliers/detail?ref=SUP-001", nil)
+	detailReq.Header.Set("Authorization", "Bearer "+token)
+	detailResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(detailResp, detailReq)
+	if detailResp.Code != http.StatusOK {
+		t.Fatalf("unexpected detail status: %d", detailResp.Code)
+	}
+
+	var detail AdminSupplierDetail
+	if err := json.NewDecoder(detailResp.Body).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode detail: %v", err)
+	}
+	if !detail.Blocked {
+		t.Fatalf("expected supplier to be blocked: %+v", detail)
+	}
+	if len(detail.AssignedItems) != 2 {
+		t.Fatalf("expected 2 assigned items, got %+v", detail.AssignedItems)
+	}
+	if detail.Code == "" {
+		t.Fatalf("expected regenerated code, got %+v", detail)
+	}
+
+	removeReq := httptest.NewRequest(http.MethodDelete, "/v1/mobile/admin/suppliers/remove?ref=SUP-001", nil)
+	removeReq.Header.Set("Authorization", "Bearer "+token)
+	removeResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(removeResp, removeReq)
+	if removeResp.Code != http.StatusOK {
+		t.Fatalf("unexpected remove status: %d", removeResp.Code)
 	}
 }

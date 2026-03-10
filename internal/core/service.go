@@ -21,8 +21,10 @@ var (
 )
 
 type ERPClient interface {
+	SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error)
 	SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error)
 	GetSupplier(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error)
+	GetItemsByCodes(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]erpnext.Item, error)
 	EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateSupplierInput) (erpnext.Supplier, error)
 	SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
 	SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]erpnext.Item, error)
@@ -48,6 +50,7 @@ type ERPAuthenticator struct {
 	adminName        string
 	adminCode        string
 	profiles         *ProfileStore
+	supplierAdmin    *AdminSupplierStore
 	envPersister     EnvPersister
 }
 
@@ -67,6 +70,7 @@ func NewERPAuthenticator(
 	werkaPhone string,
 	werkaName string,
 	profiles *ProfileStore,
+	supplierAdmin *AdminSupplierStore,
 ) *ERPAuthenticator {
 	if strings.TrimSpace(supplierPrefix) == "" {
 		supplierPrefix = "10"
@@ -90,6 +94,7 @@ func NewERPAuthenticator(
 		werkaPhone:       strings.TrimSpace(werkaPhone),
 		werkaName:        strings.TrimSpace(werkaName),
 		profiles:         profiles,
+		supplierAdmin:    supplierAdmin,
 	}
 }
 
@@ -140,15 +145,18 @@ func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Princ
 			return Principal{}, err
 		}
 		for _, item := range suppliers {
-			creds, err := suplier.GenerateAccessCredentials(suplier.Supplier{
-				Ref:   item.ID,
-				Name:  item.Name,
-				Phone: item.Phone,
-			})
+			state, err := a.adminSupplierState(item.ID)
+			if err != nil {
+				return Principal{}, err
+			}
+			if state.Removed || state.Blocked {
+				continue
+			}
+			codeValue, err := a.supplierAccessCode(item, state)
 			if err != nil {
 				continue
 			}
-			if strings.TrimSpace(code) == creds.Code &&
+			if strings.TrimSpace(code) == codeValue &&
 				strings.TrimSpace(item.Phone) != "" &&
 				strings.EqualFold(strings.TrimSpace(item.Phone), normalizedPhone) {
 				principal := Principal{
@@ -309,29 +317,14 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 }
 
 func (a *ERPAuthenticator) SupplierItems(ctx context.Context, principal Principal, query string, limit int) ([]SupplierItem, error) {
-	items, err := a.erp.SearchSupplierItems(ctx, a.baseURL, a.apiKey, a.apiSecret, principal.Ref, query, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	warehouse, err := a.resolveWarehouse(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]SupplierItem, 0, len(items))
-	for _, item := range items {
-		result = append(result, SupplierItem{
-			Code:      item.Code,
-			Name:      item.Name,
-			UOM:       item.UOM,
-			Warehouse: warehouse,
-		})
-	}
-	return result, nil
+	return a.supplierAllowedItems(ctx, principal, query, limit)
 }
 
 func (a *ERPAuthenticator) CreateDispatch(ctx context.Context, principal Principal, itemCode string, qty float64) (DispatchRecord, error) {
+	if err := a.validateSupplierItemAllowed(ctx, principal.Ref, itemCode); err != nil {
+		return DispatchRecord{}, err
+	}
+
 	warehouse, err := a.resolveWarehouse(ctx)
 	if err != nil {
 		return DispatchRecord{}, err
@@ -433,57 +426,6 @@ func (a *ERPAuthenticator) UpdateAdminSettings(input AdminSettings) error {
 		})
 	}
 	return nil
-}
-
-func (a *ERPAuthenticator) AdminSuppliers(ctx context.Context, limit int) ([]AdminSupplier, error) {
-	items, err := a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, "", limit)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]AdminSupplier, 0, len(items))
-	for _, item := range items {
-		creds, err := suplier.GenerateAccessCredentials(suplier.Supplier{
-			Ref:   item.ID,
-			Name:  item.Name,
-			Phone: item.Phone,
-		})
-		if err != nil {
-			continue
-		}
-		result = append(result, AdminSupplier{
-			Ref:   item.ID,
-			Name:  item.Name,
-			Phone: item.Phone,
-			Code:  creds.Code,
-		})
-	}
-	return result, nil
-}
-
-func (a *ERPAuthenticator) AdminCreateSupplier(ctx context.Context, name, phone string) (AdminSupplier, error) {
-	item, err := a.erp.EnsureSupplier(ctx, a.baseURL, a.apiKey, a.apiSecret, erpnext.CreateSupplierInput{
-		Name:  strings.TrimSpace(name),
-		Phone: strings.TrimSpace(phone),
-	})
-	if err != nil {
-		return AdminSupplier{}, err
-	}
-
-	creds, err := suplier.GenerateAccessCredentials(suplier.Supplier{
-		Ref:   item.ID,
-		Name:  item.Name,
-		Phone: item.Phone,
-	})
-	if err != nil {
-		return AdminSupplier{}, err
-	}
-
-	return AdminSupplier{
-		Ref:   item.ID,
-		Name:  item.Name,
-		Phone: item.Phone,
-		Code:  creds.Code,
-	}, nil
 }
 
 type SessionManager struct {
