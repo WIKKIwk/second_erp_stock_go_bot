@@ -287,7 +287,24 @@ func (a *ERPAuthenticator) SupplierHistory(ctx context.Context, principal Princi
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
-		result = append(result, mapPurchaseReceiptToDispatchRecord(item, principal.DisplayName))
+		record := mapPurchaseReceiptToDispatchRecord(item, principal.DisplayName)
+		comments, err := a.erp.ListPurchaseReceiptComments(ctx, a.baseURL, a.apiKey, a.apiSecret, item.Name, 100)
+		if err != nil {
+			return nil, err
+		}
+		for _, comment := range comments {
+			if !isSupplierAcknowledgmentComment(comment.Content) {
+				continue
+			}
+			if !strings.Contains(record.Note, "Supplier tasdiqladi:") {
+				if strings.TrimSpace(record.Note) != "" {
+					record.Note += "\n"
+				}
+				record.Note += "Supplier tasdiqladi: Tasdiqlayman, shu holat bo‘lganini ko‘rdim."
+			}
+			break
+		}
+		result = append(result, record)
 	}
 	return result, nil
 }
