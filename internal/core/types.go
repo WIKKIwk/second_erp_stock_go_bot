@@ -104,15 +104,15 @@ type AdminSupplierSummary struct {
 }
 
 type AdminSupplierDetail struct {
-	Ref           string         `json:"ref"`
-	Name          string         `json:"name"`
-	Phone         string         `json:"phone"`
-	Code          string         `json:"code"`
-	Blocked       bool           `json:"blocked"`
-	Removed       bool           `json:"removed"`
-	CodeLocked    bool           `json:"code_locked"`
-	CodeRetryAfterSec int        `json:"code_retry_after_sec"`
-	AssignedItems []SupplierItem `json:"assigned_items"`
+	Ref               string         `json:"ref"`
+	Name              string         `json:"name"`
+	Phone             string         `json:"phone"`
+	Code              string         `json:"code"`
+	Blocked           bool           `json:"blocked"`
+	Removed           bool           `json:"removed"`
+	CodeLocked        bool           `json:"code_locked"`
+	CodeRetryAfterSec int            `json:"code_retry_after_sec"`
+	AssignedItems     []SupplierItem `json:"assigned_items"`
 }
 
 type AdminSupplierStatusUpdateRequest struct {
@@ -121,6 +121,10 @@ type AdminSupplierStatusUpdateRequest struct {
 
 type AdminSupplierItemsUpdateRequest struct {
 	ItemCodes []string `json:"item_codes"`
+}
+
+type AdminSupplierItemMutationRequest struct {
+	ItemCode string `json:"item_code"`
 }
 
 type AdminCreateItemRequest struct {

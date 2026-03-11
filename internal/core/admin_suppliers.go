@@ -97,7 +97,11 @@ func (a *ERPAuthenticator) AdminSupplierDetail(ctx context.Context, ref string) 
 		return AdminSupplierDetail{}, err
 	}
 
-	assignedItems, err := a.adminAssignedItems(ctx, state.AssignedItemCodes)
+	assignedItems, err := a.erp.ListAssignedSupplierItems(ctx, a.baseURL, a.apiKey, a.apiSecret, item.ID, 200)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	mappedAssignedItems, err := a.mapSupplierItems(ctx, assignedItems)
 	if err != nil {
 		return AdminSupplierDetail{}, err
 	}
@@ -116,7 +120,7 @@ func (a *ERPAuthenticator) AdminSupplierDetail(ctx context.Context, ref string) 
 		Removed:           state.Removed,
 		CodeLocked:        state.isCodeLocked(a.nowUTC()),
 		CodeRetryAfterSec: state.retryAfterSeconds(a.nowUTC()),
-		AssignedItems:     assignedItems,
+		AssignedItems:     mappedAssignedItems,
 	}, nil
 }
 
@@ -126,6 +130,59 @@ func (a *ERPAuthenticator) AdminSearchItems(ctx context.Context, query string, l
 		return nil, err
 	}
 	return a.mapSupplierItems(ctx, items)
+}
+
+func (a *ERPAuthenticator) AdminAssignedSupplierItems(ctx context.Context, ref string, limit int) ([]SupplierItem, error) {
+	item, _, err := a.findSupplierForAdmin(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	items, err := a.erp.ListAssignedSupplierItems(ctx, a.baseURL, a.apiKey, a.apiSecret, item.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return a.mapSupplierItems(ctx, items)
+}
+
+func (a *ERPAuthenticator) AdminAssignSupplierItem(ctx context.Context, ref, itemCode string) (AdminSupplierDetail, error) {
+	item, state, err := a.findSupplierForAdmin(ctx, ref)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	if err := a.erp.AssignSupplierToItem(ctx, a.baseURL, a.apiKey, a.apiSecret, strings.TrimSpace(itemCode), item.ID); err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	state.AssignmentsConfigured = true
+	state.AssignedItemCodes = append(normalizeItemCodes(state.AssignedItemCodes), strings.TrimSpace(itemCode))
+	state.UpdatedAt = a.nowUTC()
+	if err := a.saveAdminSupplierState(item.ID, state); err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	return a.AdminSupplierDetail(ctx, item.ID)
+}
+
+func (a *ERPAuthenticator) AdminUnassignSupplierItem(ctx context.Context, ref, itemCode string) (AdminSupplierDetail, error) {
+	item, state, err := a.findSupplierForAdmin(ctx, ref)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	if err := a.erp.RemoveSupplierFromItem(ctx, a.baseURL, a.apiKey, a.apiSecret, strings.TrimSpace(itemCode), item.ID); err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	filtered := make([]string, 0, len(state.AssignedItemCodes))
+	for _, code := range state.AssignedItemCodes {
+		if strings.EqualFold(strings.TrimSpace(code), strings.TrimSpace(itemCode)) {
+			continue
+		}
+		filtered = append(filtered, code)
+	}
+	state.AssignmentsConfigured = true
+	state.AssignedItemCodes = filtered
+	state.UpdatedAt = a.nowUTC()
+	if err := a.saveAdminSupplierState(item.ID, state); err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	return a.AdminSupplierDetail(ctx, item.ID)
 }
 
 func (a *ERPAuthenticator) AdminCreateItem(ctx context.Context, code, name, uom string) (SupplierItem, error) {
@@ -168,6 +225,32 @@ func (a *ERPAuthenticator) AdminUpdateSupplierItems(ctx context.Context, ref str
 			if _, ok := found[code]; !ok {
 				return AdminSupplierDetail{}, fmt.Errorf("item topilmadi: %s", code)
 			}
+		}
+	}
+
+	currentItems, err := a.erp.ListAssignedSupplierItems(ctx, a.baseURL, a.apiKey, a.apiSecret, item.ID, 200)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	currentCodes := make(map[string]struct{}, len(currentItems))
+	for _, current := range currentItems {
+		currentCodes[strings.TrimSpace(current.Code)] = struct{}{}
+	}
+	desiredCodes := make(map[string]struct{}, len(normalizedCodes))
+	for _, code := range normalizedCodes {
+		desiredCodes[code] = struct{}{}
+		if _, ok := currentCodes[code]; !ok {
+			if err := a.erp.AssignSupplierToItem(ctx, a.baseURL, a.apiKey, a.apiSecret, code, item.ID); err != nil {
+				return AdminSupplierDetail{}, err
+			}
+		}
+	}
+	for code := range currentCodes {
+		if _, ok := desiredCodes[code]; ok {
+			continue
+		}
+		if err := a.erp.RemoveSupplierFromItem(ctx, a.baseURL, a.apiKey, a.apiSecret, code, item.ID); err != nil {
+			return AdminSupplierDetail{}, err
 		}
 	}
 
@@ -411,18 +494,6 @@ func (a *ERPAuthenticator) findSupplierForAdminWithRemovedOption(ctx context.Con
 		return erpnext.Supplier{}, AdminSupplierState{}, ErrAdminSupplierNotFound
 	}
 	return doc, state, nil
-}
-
-func (a *ERPAuthenticator) adminAssignedItems(ctx context.Context, itemCodes []string) ([]SupplierItem, error) {
-	normalizedCodes := normalizeItemCodes(itemCodes)
-	if len(normalizedCodes) == 0 {
-		return []SupplierItem{}, nil
-	}
-	items, err := a.erp.GetItemsByCodes(ctx, a.baseURL, a.apiKey, a.apiSecret, normalizedCodes)
-	if err != nil {
-		return nil, err
-	}
-	return a.mapSupplierItems(ctx, items)
 }
 
 func (a *ERPAuthenticator) bumpCodeRegenState(state AdminSupplierState, now time.Time) (AdminSupplierState, error) {

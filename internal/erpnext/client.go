@@ -39,10 +39,10 @@ type UOM struct {
 }
 
 type Supplier struct {
-	ID    string
-	Name  string
-	Phone string
-	Image string
+	ID      string
+	Name    string
+	Phone   string
+	Image   string
 	Details string
 }
 

@@ -92,6 +92,98 @@ func (c *Client) SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSe
 	return filtered, nil
 }
 
+func (c *Client) ListAssignedSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]Item, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	supplierLink, err := c.resolveSupplierLink(ctx, normalized, apiKey, apiSecret, supplier)
+	if err != nil {
+		return nil, err
+	}
+	itemCodes, err := c.fetchSupplierItemCodes(ctx, normalized, apiKey, apiSecret, supplierLink, limit)
+	if err != nil {
+		return nil, err
+	}
+	return c.searchItemsByCodes(ctx, normalized, apiKey, apiSecret, itemCodes, "", limit)
+}
+
+func (c *Client) AssignSupplierToItem(ctx context.Context, baseURL, apiKey, apiSecret, itemCode, supplier string) error {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return err
+	}
+	supplierLink, err := c.resolveSupplierLink(ctx, normalized, apiKey, apiSecret, supplier)
+	if err != nil {
+		return err
+	}
+	match, err := c.itemHasSupplier(ctx, normalized, apiKey, apiSecret, itemCode, supplierLink)
+	if err != nil {
+		return err
+	}
+	if match {
+		return nil
+	}
+	endpoint := normalized + "/api/resource/Item%20Supplier"
+	return c.doJSONRequest(ctx, http.MethodPost, endpoint, apiKey, apiSecret, map[string]interface{}{
+		"parent":      strings.TrimSpace(itemCode),
+		"parenttype":  "Item",
+		"parentfield": "supplier_items",
+		"supplier":    supplierLink,
+	}, nil)
+}
+
+func (c *Client) RemoveSupplierFromItem(ctx context.Context, baseURL, apiKey, apiSecret, itemCode, supplier string) error {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return err
+	}
+	supplierLink, err := c.resolveSupplierLink(ctx, normalized, apiKey, apiSecret, supplier)
+	if err != nil {
+		return err
+	}
+
+	var payload struct {
+		Data struct {
+			DefaultSupplier string `json:"default_supplier"`
+			SupplierItems   []struct {
+				Name     string `json:"name"`
+				Supplier string `json:"supplier"`
+			} `json:"supplier_items"`
+		} `json:"data"`
+	}
+	endpoint := normalized + "/api/resource/Item/" + url.PathEscape(strings.TrimSpace(itemCode))
+	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+		return err
+	}
+
+	for _, row := range payload.Data.SupplierItems {
+		if !strings.EqualFold(strings.TrimSpace(row.Supplier), strings.TrimSpace(supplierLink)) {
+			continue
+		}
+		if strings.TrimSpace(row.Name) == "" {
+			continue
+		}
+		deleteEndpoint := normalized + "/api/resource/Item%20Supplier/" + url.PathEscape(strings.TrimSpace(row.Name))
+		if err := c.doJSONRequest(ctx, http.MethodDelete, deleteEndpoint, apiKey, apiSecret, nil, nil); err != nil {
+			return err
+		}
+	}
+
+	if strings.EqualFold(strings.TrimSpace(payload.Data.DefaultSupplier), strings.TrimSpace(supplierLink)) {
+		if err := c.doJSONRequest(ctx, http.MethodPut, endpoint, apiKey, apiSecret, map[string]string{
+			"default_supplier": "",
+		}, nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (c *Client) GetItemsByCodes(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]Item, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {

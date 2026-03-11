@@ -17,6 +17,7 @@ import (
 type fakeERPClient struct {
 	suppliers         []erpnext.Supplier
 	items             []erpnext.Item
+	supplierItems     map[string]map[string]bool
 	uploadedAvatarURL string
 }
 
@@ -61,6 +62,36 @@ func (f *fakeERPClient) EnsureSupplier(_ context.Context, _, _, _ string, input 
 
 func (f *fakeERPClient) SearchSupplierItems(_ context.Context, _, _, _, _, _ string, _ int) ([]erpnext.Item, error) {
 	return f.items, nil
+}
+
+func (f *fakeERPClient) ListAssignedSupplierItems(_ context.Context, _, _, _, supplier string, _ int) ([]erpnext.Item, error) {
+	result := make([]erpnext.Item, 0)
+	assigned := f.supplierItems[strings.TrimSpace(supplier)]
+	for _, item := range f.items {
+		if assigned[item.Code] {
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
+func (f *fakeERPClient) AssignSupplierToItem(_ context.Context, _, _, _, itemCode, supplier string) error {
+	if f.supplierItems == nil {
+		f.supplierItems = map[string]map[string]bool{}
+	}
+	if f.supplierItems[supplier] == nil {
+		f.supplierItems[supplier] = map[string]bool{}
+	}
+	f.supplierItems[supplier][itemCode] = true
+	return nil
+}
+
+func (f *fakeERPClient) RemoveSupplierFromItem(_ context.Context, _, _, _, itemCode, supplier string) error {
+	if f.supplierItems == nil || f.supplierItems[supplier] == nil {
+		return nil
+	}
+	delete(f.supplierItems[supplier], itemCode)
+	return nil
 }
 
 func (f *fakeERPClient) GetSupplier(_ context.Context, _, _, _, id string) (erpnext.Supplier, error) {
