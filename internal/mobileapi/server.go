@@ -351,6 +351,8 @@ func dispatchRecordData(record DispatchRecord) map[string]string {
 		"uom":           record.UOM,
 		"sent_qty":      fmt.Sprintf("%.4f", record.SentQty),
 		"accepted_qty":  fmt.Sprintf("%.4f", record.AcceptedQty),
+		"amount":        fmt.Sprintf("%.4f", record.Amount),
+		"currency":      record.Currency,
 		"note":          record.Note,
 		"event_type":    record.EventType,
 		"highlight":     record.Highlight,

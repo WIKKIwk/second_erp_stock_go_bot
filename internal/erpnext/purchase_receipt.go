@@ -35,6 +35,8 @@ type PurchaseReceiptDraft struct {
 	Qty                  float64
 	UOM                  string
 	Warehouse            string
+	Amount               float64
+	Currency             string
 	Remarks              string
 }
 
@@ -832,6 +834,8 @@ func mapPurchaseReceiptDraft(doc map[string]interface{}) (PurchaseReceiptDraft, 
 		Qty:                  getFloatValue(firstItem["qty"]),
 		UOM:                  uom,
 		Warehouse:            getStringValue(firstItem["warehouse"]),
+		Amount:               getFloatValue(firstItem["amount"]),
+		Currency:             getStringValue(doc["currency"]),
 		Remarks:              getStringValue(doc["remarks"]),
 	}, nil
 }

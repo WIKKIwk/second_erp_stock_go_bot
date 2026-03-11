@@ -735,6 +735,8 @@ func mapPurchaseReceiptToDispatchRecord(item erpnext.PurchaseReceiptDraft, fallb
 		UOM:          item.UOM,
 		SentQty:      sentQty,
 		AcceptedQty:  acceptedQty,
+		Amount:       item.Amount,
+		Currency:     item.Currency,
 		Note:         erpnext.ExtractAccordDecisionNote(item.Remarks),
 		EventType:    "",
 		Highlight:    "",

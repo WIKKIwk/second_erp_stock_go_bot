@@ -41,6 +41,8 @@ type DispatchRecord struct {
 	UOM          string  `json:"uom"`
 	SentQty      float64 `json:"sent_qty"`
 	AcceptedQty  float64 `json:"accepted_qty"`
+	Amount       float64 `json:"amount,omitempty"`
+	Currency     string  `json:"currency,omitempty"`
 	Note         string  `json:"note,omitempty"`
 	EventType    string  `json:"event_type,omitempty"`
 	Highlight    string  `json:"highlight,omitempty"`
