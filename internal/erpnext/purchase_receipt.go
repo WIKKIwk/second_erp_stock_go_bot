@@ -825,9 +825,6 @@ func buildAccordDecisionNote(draft PurchaseReceiptDraft, acceptedQty, returnedQt
 	if impliedReturnedQty <= 0 {
 		return "", nil
 	}
-	if acceptedQty == 0 && trimmedComment == "" {
-		return "", fmt.Errorf("return comment is required when everything is returned")
-	}
 
 	if returnedQty < 0 {
 		return "", fmt.Errorf("returned qty cannot be negative")
