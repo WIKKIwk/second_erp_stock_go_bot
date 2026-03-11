@@ -14,4 +14,4 @@
 
 - [ ] Hard test
   Supplier -> werka, werka -> supplier, foreground/background/closed holatlarda to'liq tekshirish.
-  Current blocker: local ERP `http://localhost:8000` hozir ishlamayapti. Amaliy checklist: `HARD_TEST.md`.
+  Desktop/API oqimi o'tdi. Qolgan asosiy blok: real Android background/closed push verification. Amaliy checklist: `HARD_TEST.md`.

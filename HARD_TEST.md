@@ -12,20 +12,40 @@ Safe runtime checks completed:
 - admin login works on local `core`
 - werka login works on local `core`
 - `go test ./...` passes
+- desktop/API hard-test flow was executed successfully on `2026-03-11`
 
 Current blocker:
 
-- `.env` points to `ERP_URL=http://localhost:8000`
-- local ERP is not reachable right now
-- read-only business endpoints that need ERP return `500`
+- Android real-device push is not yet verified to completion
+- earlier ERP-local and partial-return issues were fixed during hard test
 
-Observed blocked endpoints:
+## Executed results
 
-- `/v1/mobile/admin/suppliers/summary`
-- `/v1/mobile/admin/suppliers`
-- `/v1/mobile/admin/activity`
-- `/v1/mobile/werka/pending`
-- `/v1/mobile/werka/history`
+Completed live checks on `2026-03-11`:
+
+- admin read-only smoke: passed
+- werka read-only smoke: passed
+- supplier read-only smoke: passed
+- supplier dispatch -> werka pending: passed
+- werka full accept: passed
+- werka partial return: passed
+- supplier acknowledgment after partial return: passed
+- werka synthetic acknowledgment event: passed
+- full return path: passed
+- cross-account detail guard: passed with `403 forbidden`
+
+Representative live receipts created during test:
+
+- full accept: `MAT-PRE-2026-00050`
+- partial return + acknowledgment: `MAT-PRE-2026-00051`
+- full return: `MAT-PRE-2026-00049`
+
+Representative observed results:
+
+- new supplier dispatches now appear in werka pending
+- partial return now submits successfully with an alternate non-group rejected warehouse
+- supplier acknowledgment no longer fails if remarks backfill is rejected by ERP
+- supplier A receipt detail is blocked for supplier B
 
 ## Before running hard test
 
@@ -183,3 +203,8 @@ Mark `Hard test` complete only after:
 - local ERP-backed flows pass end-to-end
 - supplier -> werka -> supplier loop passes
 - Android closed-app push is verified on real device
+
+Current assessment:
+
+- desktop/API hard-test portion: complete
+- Android real-device push verification: still pending
