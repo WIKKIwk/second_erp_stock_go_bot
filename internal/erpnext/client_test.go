@@ -492,6 +492,9 @@ func TestConfirmPurchaseReceiptClearsRejectedWarehouseWhenSameAsAccepted(t *test
 	if got := first["rejected_warehouse"]; got != "Finished Goods - A" {
 		t.Fatalf("expected alternate rejected_warehouse, got %+v", got)
 	}
+	if got := first["received_qty"]; got != float64(10) {
+		t.Fatalf("expected received_qty to include accepted+rejected, got %+v", got)
+	}
 }
 
 func TestSearchWarehousesAndUOMs(t *testing.T) {

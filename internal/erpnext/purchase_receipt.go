@@ -503,11 +503,13 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 		conversionFactor = 1
 	}
 	stockQty := acceptedQty * conversionFactor
+	receivedQty := acceptedQty + returnedQty
+	receivedStockQty := receivedQty * conversionFactor
 
 	firstItem["qty"] = acceptedQty
-	firstItem["received_qty"] = acceptedQty
+	firstItem["received_qty"] = receivedQty
 	firstItem["stock_qty"] = stockQty
-	firstItem["received_stock_qty"] = stockQty
+	firstItem["received_stock_qty"] = receivedStockQty
 	firstItem["rejected_qty"] = returnedQty
 	if returnedQty > 0 {
 		rejectedWarehouse := strings.TrimSpace(getStringValue(firstItem["rejected_warehouse"]))
