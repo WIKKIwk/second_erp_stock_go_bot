@@ -75,6 +75,8 @@ type AdminSettings struct {
 	WerkaPhone             string `json:"werka_phone"`
 	WerkaName              string `json:"werka_name"`
 	WerkaCode              string `json:"werka_code"`
+	WerkaCodeLocked        bool   `json:"werka_code_locked"`
+	WerkaCodeRetryAfterSec int    `json:"werka_code_retry_after_sec"`
 	AdminPhone             string `json:"admin_phone"`
 	AdminName              string `json:"admin_name"`
 }
@@ -108,6 +110,8 @@ type AdminSupplierDetail struct {
 	Code          string         `json:"code"`
 	Blocked       bool           `json:"blocked"`
 	Removed       bool           `json:"removed"`
+	CodeLocked    bool           `json:"code_locked"`
+	CodeRetryAfterSec int        `json:"code_retry_after_sec"`
 	AssignedItems []SupplierItem `json:"assigned_items"`
 }
 

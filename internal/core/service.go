@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"erpnext_stock_telegram/internal/erpnext"
 	"erpnext_stock_telegram/internal/suplier"
@@ -24,6 +25,7 @@ type ERPClient interface {
 	SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error)
 	SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error)
 	GetSupplier(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error)
+	UpdateSupplierDetails(ctx context.Context, baseURL, apiKey, apiSecret, id, details string) error
 	GetItemsByCodes(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]erpnext.Item, error)
 	CreateItem(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateItemInput) (erpnext.Item, error)
 	EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateSupplierInput) (erpnext.Supplier, error)
@@ -419,6 +421,7 @@ func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string,
 }
 
 func (a *ERPAuthenticator) AdminSettings() AdminSettings {
+	werkaState, _ := a.adminSupplierState(werkaStateRef)
 	return AdminSettings{
 		ERPURL:                 a.baseURL,
 		ERPAPIKey:              a.apiKey,
@@ -428,6 +431,8 @@ func (a *ERPAuthenticator) AdminSettings() AdminSettings {
 		WerkaPhone:             a.werkaPhone,
 		WerkaName:              a.werkaName,
 		WerkaCode:              a.werkaCode,
+		WerkaCodeLocked:        werkaState.isCodeLocked(a.nowUTC()),
+		WerkaCodeRetryAfterSec: werkaState.retryAfterSeconds(a.nowUTC()),
 		AdminPhone:             a.adminPhone,
 		AdminName:              a.adminName,
 	}
@@ -462,11 +467,26 @@ func (a *ERPAuthenticator) UpdateAdminSettings(input AdminSettings) error {
 }
 
 func (a *ERPAuthenticator) AdminRegenerateWerkaCode() (AdminSettings, error) {
+	now := a.nowUTC()
+	state, err := a.adminSupplierState(werkaStateRef)
+	if err != nil {
+		return AdminSettings{}, err
+	}
+	state, err = a.bumpCodeRegenState(state, now)
+	if err != nil {
+		return AdminSettings{}, err
+	}
+
 	code, err := randomSupplierCode(a.werkaPrefix, map[string]struct{}{})
 	if err != nil {
 		return AdminSettings{}, err
 	}
 	a.werkaCode = code
+	state.CustomCode = code
+	state.UpdatedAt = now
+	if err := a.saveAdminSupplierState(werkaStateRef, state); err != nil {
+		return AdminSettings{}, err
+	}
 	if a.envPersister != nil {
 		if err := a.envPersister.Upsert(map[string]string{
 			"MOBILE_DEV_WERKA_CODE": a.werkaCode,
@@ -475,6 +495,10 @@ func (a *ERPAuthenticator) AdminRegenerateWerkaCode() (AdminSettings, error) {
 		}
 	}
 	return a.AdminSettings(), nil
+}
+
+func (a *ERPAuthenticator) nowUTC() time.Time {
+	return time.Now().UTC()
 }
 
 type SessionManager struct {

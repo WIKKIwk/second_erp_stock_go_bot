@@ -14,6 +14,11 @@ type AdminSupplierState struct {
 	Removed               bool      `json:"removed,omitempty"`
 	AssignmentsConfigured bool      `json:"assignments_configured,omitempty"`
 	AssignedItemCodes     []string  `json:"assigned_item_codes,omitempty"`
+	PendingPersistCode    string    `json:"pending_persist_code,omitempty"`
+	PendingPersistAt      time.Time `json:"pending_persist_at,omitempty"`
+	RegenWindowStartedAt  time.Time `json:"regen_window_started_at,omitempty"`
+	RegenWindowCount      int       `json:"regen_window_count,omitempty"`
+	CooldownUntil         time.Time `json:"cooldown_until,omitempty"`
 	UpdatedAt             time.Time `json:"updated_at,omitempty"`
 }
 

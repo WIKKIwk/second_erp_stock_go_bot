@@ -75,9 +75,10 @@ func (c *Client) SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret
 			phone = extractPhoneFromSupplierDetails(row.Details)
 		}
 		items = append(items, Supplier{
-			ID:    strings.TrimSpace(row.Name),
-			Name:  name,
-			Phone: phone,
+			ID:      strings.TrimSpace(row.Name),
+			Name:    name,
+			Phone:   phone,
+			Details: strings.TrimSpace(row.Details),
 		})
 	}
 	return items, nil
@@ -170,11 +171,23 @@ func (c *Client) GetSupplier(ctx context.Context, baseURL, apiKey, apiSecret, id
 	}
 
 	return Supplier{
-		ID:    strings.TrimSpace(payload.Data.Name),
-		Name:  name,
-		Phone: phone,
-		Image: strings.TrimSpace(payload.Data.Image),
+		ID:      strings.TrimSpace(payload.Data.Name),
+		Name:    name,
+		Phone:   phone,
+		Image:   strings.TrimSpace(payload.Data.Image),
+		Details: strings.TrimSpace(payload.Data.Details),
 	}, nil
+}
+
+func (c *Client) UpdateSupplierDetails(ctx context.Context, baseURL, apiKey, apiSecret, id, details string) error {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return err
+	}
+	endpoint := normalized + "/api/resource/Supplier/" + url.PathEscape(strings.TrimSpace(id))
+	return c.doJSONRequest(ctx, http.MethodPut, endpoint, apiKey, apiSecret, map[string]string{
+		"supplier_details": strings.TrimSpace(details),
+	}, nil)
 }
 
 func (c *Client) UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error) {

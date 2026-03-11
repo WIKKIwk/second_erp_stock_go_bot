@@ -15,7 +15,17 @@ import (
 
 const supplierCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
-var ErrAdminSupplierNotFound = errors.New("admin supplier not found")
+const (
+	codeRegenWindow        = time.Minute
+	maxCodeRegensPerWindow = 3
+	accordCodeLinePrefix   = "Accord Code:"
+	werkaStateRef          = "__werka__"
+)
+
+var (
+	ErrAdminSupplierNotFound = errors.New("admin supplier not found")
+	ErrCodeRegenCooldown     = errors.New("code regenerate cooldown")
+)
 
 func (a *ERPAuthenticator) AdminSupplierSummary(ctx context.Context, limit int) (AdminSupplierSummary, error) {
 	items, err := a.adminSuppliersWithOptions(ctx, limit, true)
@@ -98,13 +108,15 @@ func (a *ERPAuthenticator) AdminSupplierDetail(ctx context.Context, ref string) 
 	}
 
 	return AdminSupplierDetail{
-		Ref:           item.ID,
-		Name:          item.Name,
-		Phone:         item.Phone,
-		Code:          code,
-		Blocked:       state.Blocked,
-		Removed:       state.Removed,
-		AssignedItems: assignedItems,
+		Ref:               item.ID,
+		Name:              item.Name,
+		Phone:             item.Phone,
+		Code:              code,
+		Blocked:           state.Blocked,
+		Removed:           state.Removed,
+		CodeLocked:        state.isCodeLocked(a.nowUTC()),
+		CodeRetryAfterSec: state.retryAfterSeconds(a.nowUTC()),
+		AssignedItems:     assignedItems,
 	}, nil
 }
 
@@ -212,10 +224,18 @@ func (a *ERPAuthenticator) AdminRegenerateSupplierCode(ctx context.Context, ref 
 	if err != nil {
 		return AdminSupplierDetail{}, err
 	}
+	now := a.nowUTC()
+	state, err = a.bumpCodeRegenState(state, now)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	state.PendingPersistCode = state.CustomCode
+	state.PendingPersistAt = now.Add(codeRegenWindow)
 	state.UpdatedAt = time.Now().UTC()
 	if err := a.saveAdminSupplierState(item.ID, state); err != nil {
 		return AdminSupplierDetail{}, err
 	}
+	a.scheduleSupplierCodePersist(item.ID, state.CustomCode, state.PendingPersistAt)
 	return a.AdminSupplierDetail(ctx, item.ID)
 }
 
@@ -403,6 +423,92 @@ func (a *ERPAuthenticator) adminAssignedItems(ctx context.Context, itemCodes []s
 		return nil, err
 	}
 	return a.mapSupplierItems(ctx, items)
+}
+
+func (a *ERPAuthenticator) bumpCodeRegenState(state AdminSupplierState, now time.Time) (AdminSupplierState, error) {
+	if state.isCodeLocked(now) {
+		return state, ErrCodeRegenCooldown
+	}
+
+	if state.RegenWindowStartedAt.IsZero() || now.Sub(state.RegenWindowStartedAt) >= codeRegenWindow {
+		state.RegenWindowStartedAt = now
+		state.RegenWindowCount = 0
+		state.CooldownUntil = time.Time{}
+	}
+
+	state.RegenWindowCount++
+	if state.RegenWindowCount >= maxCodeRegensPerWindow {
+		state.CooldownUntil = state.RegenWindowStartedAt.Add(codeRegenWindow)
+	}
+	return state, nil
+}
+
+func (state AdminSupplierState) isCodeLocked(now time.Time) bool {
+	return !state.CooldownUntil.IsZero() && now.Before(state.CooldownUntil)
+}
+
+func (state AdminSupplierState) retryAfterSeconds(now time.Time) int {
+	if !state.isCodeLocked(now) {
+		return 0
+	}
+	seconds := int(state.CooldownUntil.Sub(now).Seconds())
+	if seconds < 1 {
+		return 1
+	}
+	return seconds
+}
+
+func (a *ERPAuthenticator) scheduleSupplierCodePersist(ref, code string, dueAt time.Time) {
+	go func() {
+		wait := time.Until(dueAt)
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+
+		state, err := a.adminSupplierState(ref)
+		if err != nil {
+			return
+		}
+		if strings.TrimSpace(state.PendingPersistCode) != strings.TrimSpace(code) {
+			return
+		}
+		if time.Until(state.PendingPersistAt) > 0 {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		supplier, err := a.erp.GetSupplier(ctx, a.baseURL, a.apiKey, a.apiSecret, ref)
+		if err != nil {
+			return
+		}
+		details := upsertAccordCodeInDetails(supplier.Details, code)
+		if err := a.erp.UpdateSupplierDetails(ctx, a.baseURL, a.apiKey, a.apiSecret, ref, details); err != nil {
+			return
+		}
+
+		state.PendingPersistCode = ""
+		state.PendingPersistAt = time.Time{}
+		_ = a.saveAdminSupplierState(ref, state)
+	}()
+}
+
+func upsertAccordCodeInDetails(details, code string) string {
+	lines := strings.Split(strings.ReplaceAll(details, "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, accordCodeLinePrefix) {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	filtered = append(filtered, accordCodeLinePrefix+" "+strings.TrimSpace(code))
+	return strings.Join(filtered, "\n")
 }
 
 func (a *ERPAuthenticator) mapSupplierItems(ctx context.Context, items []erpnext.Item) ([]SupplierItem, error) {

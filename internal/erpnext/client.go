@@ -43,6 +43,7 @@ type Supplier struct {
 	Name  string
 	Phone string
 	Image string
+	Details string
 }
 
 type CreateStockEntryInput struct {

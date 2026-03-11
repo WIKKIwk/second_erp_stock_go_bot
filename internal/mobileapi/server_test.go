@@ -72,6 +72,17 @@ func (f *fakeERPClient) GetSupplier(_ context.Context, _, _, _, id string) (erpn
 	return erpnext.Supplier{}, nil
 }
 
+func (f *fakeERPClient) UpdateSupplierDetails(_ context.Context, _, _, _, id, details string) error {
+	for index, item := range f.suppliers {
+		if item.ID == id {
+			item.Details = details
+			f.suppliers[index] = item
+			return nil
+		}
+	}
+	return nil
+}
+
 func (f *fakeERPClient) ListPendingPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
 	return nil, nil
 }

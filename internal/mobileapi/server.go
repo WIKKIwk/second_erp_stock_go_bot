@@ -549,6 +549,10 @@ func (s *Server) handleAdminSupplierCodeRegenerate(w http.ResponseWriter, r *htt
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "supplier not found"})
 			return
 		}
+		if errors.Is(err, ErrCodeRegenCooldown) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "code regenerate cooldown"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "supplier code regenerate failed"})
 		return
 	}
@@ -691,6 +695,10 @@ func (s *Server) handleAdminWerkaCodeRegenerate(w http.ResponseWriter, r *http.R
 
 	settings, err := s.auth.AdminRegenerateWerkaCode()
 	if err != nil {
+		if errors.Is(err, ErrCodeRegenCooldown) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "code regenerate cooldown"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "werka code regenerate failed"})
 		return
 	}

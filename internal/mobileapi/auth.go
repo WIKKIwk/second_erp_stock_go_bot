@@ -7,6 +7,7 @@ var (
 	ErrInvalidRole           = core.ErrInvalidRole
 	ErrUnauthorized          = core.ErrUnauthorized
 	ErrAdminSupplierNotFound = core.ErrAdminSupplierNotFound
+	ErrCodeRegenCooldown     = core.ErrCodeRegenCooldown
 )
 
 type ERPClient = core.ERPClient
