@@ -42,6 +42,8 @@ type DispatchRecord struct {
 	SentQty      float64 `json:"sent_qty"`
 	AcceptedQty  float64 `json:"accepted_qty"`
 	Note         string  `json:"note,omitempty"`
+	EventType    string  `json:"event_type,omitempty"`
+	Highlight    string  `json:"highlight,omitempty"`
 	Status       string  `json:"status"`
 	CreatedLabel string  `json:"created_label"`
 }

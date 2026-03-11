@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,8 @@ var (
 	ErrUnauthorized       = errors.New("unauthorized")
 	htmlTagPattern        = regexp.MustCompile(`<[^>]+>`)
 )
+
+const supplierAckEventPrefix = "supplier_ack:"
 
 type ERPClient interface {
 	SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error)
@@ -314,13 +317,51 @@ func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]Dispa
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
-		result = append(result, mapPurchaseReceiptToDispatchRecord(item, item.SupplierName))
+		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
+		result = append(result, record)
+
+		comments, err := a.erp.ListPurchaseReceiptComments(ctx, a.baseURL, a.apiKey, a.apiSecret, item.Name, 100)
+		if err != nil {
+			return nil, err
+		}
+		for _, comment := range comments {
+			if !isSupplierAcknowledgmentComment(comment.Content) {
+				continue
+			}
+			result = append(result, DispatchRecord{
+				ID:           supplierAckEventPrefix + item.Name + ":" + comment.ID,
+				SupplierName: item.SupplierName,
+				ItemCode:     item.ItemCode,
+				ItemName:     item.ItemName,
+				UOM:          item.UOM,
+				SentQty:      record.SentQty,
+				AcceptedQty:  record.AcceptedQty,
+				Note:         "",
+				EventType:    "supplier_ack",
+				Highlight:    "Supplier mahsulotni qaytarganingizni tasdiqladi",
+				Status:       "accepted",
+				CreatedLabel: comment.CreatedAt,
+			})
+		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedLabel > result[j].CreatedLabel
+	})
 	return result, nil
 }
 
 func (a *ERPAuthenticator) NotificationDetail(ctx context.Context, principal Principal, receiptID string) (NotificationDetail, error) {
-	draft, err := a.erp.GetPurchaseReceipt(ctx, a.baseURL, a.apiKey, a.apiSecret, strings.TrimSpace(receiptID))
+	trimmedReceiptID := strings.TrimSpace(receiptID)
+	eventType := ""
+	if strings.HasPrefix(trimmedReceiptID, supplierAckEventPrefix) {
+		eventType = "supplier_ack"
+		parts := strings.SplitN(strings.TrimPrefix(trimmedReceiptID, supplierAckEventPrefix), ":", 2)
+		if len(parts) > 0 {
+			trimmedReceiptID = strings.TrimSpace(parts[0])
+		}
+	}
+
+	draft, err := a.erp.GetPurchaseReceipt(ctx, a.baseURL, a.apiKey, a.apiSecret, trimmedReceiptID)
 	if err != nil {
 		return NotificationDetail{}, err
 	}
@@ -329,6 +370,11 @@ func (a *ERPAuthenticator) NotificationDetail(ctx context.Context, principal Pri
 	}
 
 	record := mapPurchaseReceiptToDispatchRecord(draft, draft.SupplierName)
+	if eventType == "supplier_ack" {
+		record.ID = strings.TrimSpace(receiptID)
+		record.EventType = eventType
+		record.Highlight = "Supplier mahsulotni qaytarganingizni tasdiqladi"
+	}
 	if principal.Role == RoleSupplier && strings.TrimSpace(principal.DisplayName) != "" {
 		record.SupplierName = principal.DisplayName
 	}
@@ -690,6 +736,8 @@ func mapPurchaseReceiptToDispatchRecord(item erpnext.PurchaseReceiptDraft, fallb
 		SentQty:      sentQty,
 		AcceptedQty:  acceptedQty,
 		Note:         erpnext.ExtractAccordDecisionNote(item.Remarks),
+		EventType:    "",
+		Highlight:    "",
 		Status:       status,
 		CreatedLabel: item.PostingDate,
 	}
@@ -752,6 +800,11 @@ func sanitizeNotificationComment(content string) string {
 
 func isSupplierAcknowledgmentMessage(message string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(message)), "tasdiqlayman")
+}
+
+func isSupplierAcknowledgmentComment(content string) bool {
+	author, body := parseNotificationComment(content)
+	return strings.HasPrefix(author, "Supplier") && isSupplierAcknowledgmentMessage(body)
 }
 
 func dispatchStatusFromQuantities(sentQty, acceptedQty float64) string {
