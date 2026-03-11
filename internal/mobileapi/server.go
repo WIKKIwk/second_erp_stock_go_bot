@@ -3,23 +3,28 @@ package mobileapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Server struct {
 	auth     *ERPAuthenticator
 	sessions *SessionManager
 	push     *PushTokenStore
+	sender   pushSender
 }
 
 func NewServer(auth *ERPAuthenticator) *Server {
+	pushStore := NewPushTokenStore("data/mobile_push_tokens.json")
 	return &Server{
 		auth:     auth,
 		sessions: NewSessionManager(),
-		push:     NewPushTokenStore("data/mobile_push_tokens.json"),
+		push:     pushStore,
+		sender:   newPushSender(pushStore),
 	}
 }
 
@@ -274,6 +279,20 @@ func (s *Server) handleNotificationComment(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "notification comment failed"})
 		return
 	}
+	if principal.Role == RoleSupplier && strings.HasPrefix(strings.ToLower(strings.TrimSpace(req.Message)), "tasdiqlayman") {
+		record := detail.Record
+		record.ID = "supplier_ack:" + strings.TrimSpace(record.ID) + ":" + fmt.Sprintf("%d", time.Now().Unix())
+		record.EventType = "supplier_ack"
+		record.Highlight = "Supplier mahsulotni qaytarganingizni tasdiqladi"
+		record.Note = ""
+		_ = s.sender.SendToKey(
+			r.Context(),
+			string(RoleWerka)+":werka",
+			"Supplier tasdiqladi",
+			record.Highlight,
+			dispatchRecordData(record),
+		)
+	}
 	writeJSON(w, http.StatusOK, detail)
 }
 
@@ -321,6 +340,23 @@ func (s *Server) handlePushToken(w http.ResponseWriter, r *http.Request) {
 
 func pushTokenKey(principal Principal) string {
 	return string(principal.Role) + ":" + strings.TrimSpace(principal.Ref)
+}
+
+func dispatchRecordData(record DispatchRecord) map[string]string {
+	return map[string]string{
+		"id":            record.ID,
+		"supplier_name": record.SupplierName,
+		"item_code":     record.ItemCode,
+		"item_name":     record.ItemName,
+		"uom":           record.UOM,
+		"sent_qty":      fmt.Sprintf("%.4f", record.SentQty),
+		"accepted_qty":  fmt.Sprintf("%.4f", record.AcceptedQty),
+		"note":          record.Note,
+		"event_type":    record.EventType,
+		"highlight":     record.Highlight,
+		"status":        string(record.Status),
+		"created_label": record.CreatedLabel,
+	}
 }
 
 func (s *Server) handleSupplierHistory(w http.ResponseWriter, r *http.Request) {
@@ -386,6 +422,13 @@ func (s *Server) handleCreateDispatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "dispatch create failed"})
 		return
 	}
+	_ = s.sender.SendToKey(
+		r.Context(),
+		string(RoleWerka)+":werka",
+		record.SupplierName,
+		fmt.Sprintf("%s • %.0f %s qabul kutmoqda.", record.ItemCode, record.SentQty, record.UOM),
+		dispatchRecordData(record),
+	)
 	writeJSON(w, http.StatusOK, record)
 }
 
@@ -458,6 +501,13 @@ func (s *Server) handleWerkaConfirm(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "receipt confirm failed"})
 		return
 	}
+	_ = s.sender.SendToKey(
+		r.Context(),
+		string(RoleSupplier)+":"+strings.TrimSpace(record.SupplierName),
+		record.ItemCode,
+		fmt.Sprintf("Status: %s", strings.TrimSpace(record.Status)),
+		dispatchRecordData(record),
+	)
 	writeJSON(w, http.StatusOK, record)
 }
 
