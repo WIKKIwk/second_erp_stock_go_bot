@@ -445,6 +445,53 @@ func TestCreateDraftAndSubmitPurchaseReceipt(t *testing.T) {
 	}
 }
 
+func TestConfirmPurchaseReceiptClearsRejectedWarehouseWhenSameAsAccepted(t *testing.T) {
+	var updatePayload map[string]interface{}
+
+	docResponse := `{"data":{"doctype":"Purchase Receipt","name":"MAT-PRE-0002","supplier":"SUP-001","posting_date":"2026-03-07","supplier_delivery_note":"TG:+998901234567:20260307120000","items":[{"item_code":"ITEM-001","item_name":"Rice","qty":10,"uom":"Kg","stock_uom":"Kg","warehouse":"Stores - CH","rejected_warehouse":"Stores - CH","conversion_factor":1}]}}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/resource/Purchase Receipt/MAT-PRE-0002", "/api/resource/Purchase%20Receipt/MAT-PRE-0002":
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(docResponse))
+			case http.MethodPut:
+				raw, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(raw, &updatePayload)
+				_, _ = w.Write([]byte(`{"data":{"name":"MAT-PRE-0002"}}`))
+			default:
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			}
+		case "/api/method/frappe.client.submit":
+			_, _ = w.Write([]byte(`{"message":{"name":"MAT-PRE-0002","docstatus":1}}`))
+		case "/api/resource/Comment":
+			_, _ = w.Write([]byte(`{"data":{"name":"COMM-0001"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	_, err := client.ConfirmAndSubmitPurchaseReceipt(context.Background(), server.URL, "key", "secret", "MAT-PRE-0002", 7, 3, "Yaroqsiz", "partial test")
+	if err != nil {
+		t.Fatalf("unexpected submit error: %v", err)
+	}
+
+	items, ok := updatePayload["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("unexpected update payload: %+v", updatePayload)
+	}
+	first, ok := items[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected item payload: %+v", items[0])
+	}
+	if got := first["rejected_warehouse"]; got != "" {
+		t.Fatalf("expected empty rejected_warehouse, got %+v", got)
+	}
+}
+
 func TestSearchWarehousesAndUOMs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

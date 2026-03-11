@@ -510,7 +510,12 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	firstItem["received_stock_qty"] = stockQty
 	firstItem["rejected_qty"] = returnedQty
 	if returnedQty > 0 {
-		firstItem["rejected_warehouse"] = getStringValue(firstItem["warehouse"])
+		rejectedWarehouse := strings.TrimSpace(getStringValue(firstItem["rejected_warehouse"]))
+		acceptedWarehouse := strings.TrimSpace(getStringValue(firstItem["warehouse"]))
+		if strings.EqualFold(rejectedWarehouse, acceptedWarehouse) {
+			rejectedWarehouse = ""
+		}
+		firstItem["rejected_warehouse"] = rejectedWarehouse
 	} else {
 		firstItem["rejected_warehouse"] = ""
 	}
