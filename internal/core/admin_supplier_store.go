@@ -23,8 +23,10 @@ type AdminSupplierState struct {
 }
 
 type AdminSupplierStore struct {
-	path string
-	mu   sync.Mutex
+	path   string
+	mu     sync.Mutex
+	loaded bool
+	cache  map[string]AdminSupplierState
 }
 
 func NewAdminSupplierStore(path string) *AdminSupplierStore {
@@ -35,7 +37,7 @@ func (s *AdminSupplierStore) Get(ref string) (AdminSupplierState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return AdminSupplierState{}, err
 	}
@@ -46,7 +48,7 @@ func (s *AdminSupplierStore) Put(ref string, state AdminSupplierState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return err
 	}
@@ -58,7 +60,7 @@ func (s *AdminSupplierStore) Delete(ref string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return err
 	}
@@ -69,7 +71,27 @@ func (s *AdminSupplierStore) Delete(ref string) error {
 func (s *AdminSupplierStore) List() (map[string]AdminSupplierState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.readAllLocked()
+	all, err := s.loadAllLocked()
+	if err != nil {
+		return nil, err
+	}
+	return cloneAdminSupplierStateMap(all), nil
+}
+
+func (s *AdminSupplierStore) loadAllLocked() (map[string]AdminSupplierState, error) {
+	if s.loaded {
+		if s.cache == nil {
+			s.cache = map[string]AdminSupplierState{}
+		}
+		return s.cache, nil
+	}
+	all, err := s.readAllLocked()
+	if err != nil {
+		return nil, err
+	}
+	s.cache = all
+	s.loaded = true
+	return s.cache, nil
 }
 
 func (s *AdminSupplierStore) readAllLocked() (map[string]AdminSupplierState, error) {
@@ -119,5 +141,19 @@ func (s *AdminSupplierStore) writeAllLocked(data map[string]AdminSupplierState) 
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, s.path)
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		return err
+	}
+	s.cache = cloneAdminSupplierStateMap(data)
+	s.loaded = true
+	return nil
+}
+
+func cloneAdminSupplierStateMap(input map[string]AdminSupplierState) map[string]AdminSupplierState {
+	cloned := make(map[string]AdminSupplierState, len(input))
+	for key, value := range input {
+		value.AssignedItemCodes = append([]string(nil), value.AssignedItemCodes...)
+		cloned[key] = value
+	}
+	return cloned
 }

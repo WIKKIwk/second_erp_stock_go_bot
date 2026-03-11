@@ -16,8 +16,10 @@ type PushTokenRecord struct {
 }
 
 type PushTokenStore struct {
-	path string
-	mu   sync.Mutex
+	path   string
+	mu     sync.Mutex
+	loaded bool
+	cache  map[string][]PushTokenRecord
 }
 
 func NewPushTokenStore(path string) *PushTokenStore {
@@ -28,7 +30,7 @@ func (s *PushTokenStore) Put(key, token, platform string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return err
 	}
@@ -54,7 +56,7 @@ func (s *PushTokenStore) Delete(key, token string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return err
 	}
@@ -78,11 +80,27 @@ func (s *PushTokenStore) List(key string) ([]PushTokenRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return nil, err
 	}
 	return append([]PushTokenRecord(nil), all[key]...), nil
+}
+
+func (s *PushTokenStore) loadAllLocked() (map[string][]PushTokenRecord, error) {
+	if s.loaded {
+		if s.cache == nil {
+			s.cache = map[string][]PushTokenRecord{}
+		}
+		return s.cache, nil
+	}
+	all, err := s.readAllLocked()
+	if err != nil {
+		return nil, err
+	}
+	s.cache = all
+	s.loaded = true
+	return s.cache, nil
 }
 
 func (s *PushTokenStore) readAllLocked() (map[string][]PushTokenRecord, error) {
@@ -131,5 +149,18 @@ func (s *PushTokenStore) writeAllLocked(data map[string][]PushTokenRecord) error
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, s.path)
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		return err
+	}
+	s.cache = clonePushTokenRecordMap(data)
+	s.loaded = true
+	return nil
+}
+
+func clonePushTokenRecordMap(input map[string][]PushTokenRecord) map[string][]PushTokenRecord {
+	cloned := make(map[string][]PushTokenRecord, len(input))
+	for key, value := range input {
+		cloned[key] = append([]PushTokenRecord(nil), value...)
+	}
+	return cloned
 }

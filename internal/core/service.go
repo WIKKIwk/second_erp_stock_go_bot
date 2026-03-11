@@ -46,6 +46,7 @@ type ERPClient interface {
 	ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string) (erpnext.PurchaseReceiptDraft, error)
 	ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]erpnext.Comment, error)
+	ListPurchaseReceiptCommentsBatch(ctx context.Context, baseURL, apiKey, apiSecret string, names []string, limit int) (map[string][]erpnext.Comment, error)
 	AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error
 	UpdatePurchaseReceiptRemarks(ctx context.Context, baseURL, apiKey, apiSecret, name, remarks string) error
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
@@ -175,15 +176,22 @@ func (a *ERPAuthenticator) Login(ctx context.Context, phone, code string) (Princ
 
 	switch role {
 	case RoleSupplier:
-		suppliers, err := a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, "", 500)
+		suppliers, err := a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, normalizedPhone, 50)
+		if err != nil {
+			return Principal{}, err
+		}
+		if len(suppliers) == 0 {
+			suppliers, err = a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, "", 500)
+			if err != nil {
+				return Principal{}, err
+			}
+		}
+		states, err := a.adminSupplierStates()
 		if err != nil {
 			return Principal{}, err
 		}
 		for _, item := range suppliers {
-			state, err := a.adminSupplierState(item.ID)
-			if err != nil {
-				return Principal{}, err
-			}
+			state := states[strings.TrimSpace(item.ID)]
 			if state.Removed || state.Blocked {
 				continue
 			}
@@ -302,14 +310,15 @@ func (a *ERPAuthenticator) SupplierHistory(ctx context.Context, principal Princi
 		return nil, err
 	}
 
+	commentsByReceipt, err := a.purchaseReceiptCommentsByName(ctx, items, 100)
+	if err != nil {
+		return nil, err
+	}
+
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
 		record := mapPurchaseReceiptToDispatchRecord(item, principal.DisplayName)
-		comments, err := a.erp.ListPurchaseReceiptComments(ctx, a.baseURL, a.apiKey, a.apiSecret, item.Name, 100)
-		if err != nil {
-			return nil, err
-		}
-		for _, comment := range comments {
+		for _, comment := range commentsByReceipt[item.Name] {
 			if !isSupplierAcknowledgmentComment(comment.Content) {
 				continue
 			}
@@ -349,16 +358,17 @@ func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]Dispa
 		return nil, err
 	}
 
+	commentsByReceipt, err := a.purchaseReceiptCommentsByName(ctx, items, 100)
+	if err != nil {
+		return nil, err
+	}
+
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
 		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
 		result = append(result, record)
 
-		comments, err := a.erp.ListPurchaseReceiptComments(ctx, a.baseURL, a.apiKey, a.apiSecret, item.Name, 100)
-		if err != nil {
-			return nil, err
-		}
-		for _, comment := range comments {
+		for _, comment := range commentsByReceipt[item.Name] {
 			if !isSupplierAcknowledgmentComment(comment.Content) {
 				continue
 			}
@@ -383,6 +393,43 @@ func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]Dispa
 		return result[i].CreatedLabel > result[j].CreatedLabel
 	})
 	return result, nil
+}
+
+func (a *ERPAuthenticator) purchaseReceiptCommentsByName(ctx context.Context, items []erpnext.PurchaseReceiptDraft, limit int) (map[string][]erpnext.Comment, error) {
+	if len(items) == 0 {
+		return map[string][]erpnext.Comment{}, nil
+	}
+
+	names := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
+		if !dispatchRecordNeedsCommentScan(record) {
+			continue
+		}
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return map[string][]erpnext.Comment{}, nil
+	}
+
+	return a.erp.ListPurchaseReceiptCommentsBatch(ctx, a.baseURL, a.apiKey, a.apiSecret, names, limit)
+}
+
+func dispatchRecordNeedsCommentScan(record DispatchRecord) bool {
+	switch record.Status {
+	case "partial", "rejected", "cancelled":
+		return true
+	}
+	return strings.TrimSpace(record.Note) != ""
 }
 
 func (a *ERPAuthenticator) NotificationDetail(ctx context.Context, principal Principal, receiptID string) (NotificationDetail, error) {

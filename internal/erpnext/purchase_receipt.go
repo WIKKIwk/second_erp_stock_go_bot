@@ -71,35 +71,11 @@ func (c *Client) SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSe
 		return nil, err
 	}
 
-	searchLimit := limit * 10
-	if searchLimit < 50 {
-		searchLimit = 50
-	}
-	if searchLimit > 100 {
-		searchLimit = 100
-	}
-
-	candidates, err := c.searchItemsByQuery(ctx, normalized, apiKey, apiSecret, query, searchLimit)
+	itemCodes, err := c.fetchSupplierItemCodes(ctx, normalized, apiKey, apiSecret, supplierLink, 500)
 	if err != nil {
 		return nil, err
 	}
-
-	filtered := make([]Item, 0, limit)
-	for _, item := range candidates {
-		match, err := c.itemHasSupplier(ctx, normalized, apiKey, apiSecret, item.Code, supplierLink)
-		if err != nil {
-			return nil, err
-		}
-		if !match {
-			continue
-		}
-		filtered = append(filtered, item)
-		if len(filtered) >= limit {
-			break
-		}
-	}
-
-	return filtered, nil
+	return c.searchItemsByCodes(ctx, normalized, apiKey, apiSecret, itemCodes, query, limit)
 }
 
 func (c *Client) ListAssignedSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]Item, error) {
@@ -377,6 +353,14 @@ func (c *Client) GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSec
 }
 
 func (c *Client) ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]Comment, error) {
+	itemsByName, err := c.ListPurchaseReceiptCommentsBatch(ctx, baseURL, apiKey, apiSecret, []string{name}, limit)
+	if err != nil {
+		return nil, err
+	}
+	return itemsByName[strings.TrimSpace(name)], nil
+}
+
+func (c *Client) ListPurchaseReceiptCommentsBatch(ctx context.Context, baseURL, apiKey, apiSecret string, names []string, limit int) (map[string][]Comment, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {
 		return nil, err
@@ -384,23 +368,40 @@ func (c *Client) ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKe
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	normalizedNames := make([]string, 0, len(names))
+	seenNames := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seenNames[trimmed]; ok {
+			continue
+		}
+		seenNames[trimmed] = struct{}{}
+		normalizedNames = append(normalizedNames, trimmed)
+	}
+	if len(normalizedNames) == 0 {
+		return map[string][]Comment{}, nil
+	}
 
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"reference_doctype", "=", "Purchase Receipt"},
-		{"reference_name", "=", strings.TrimSpace(name)},
+		{"reference_name", "in", normalizedNames},
 		{"comment_type", "=", "Comment"},
 	})
 	params := url.Values{}
-	params.Set("fields", `["name","content","creation"]`)
+	params.Set("fields", `["name","content","creation","reference_name"]`)
 	params.Set("filters", string(filtersJSON))
-	params.Set("order_by", "creation asc")
-	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
+	params.Set("order_by", "reference_name asc, creation asc")
+	params.Set("limit_page_length", fmt.Sprintf("%d", len(normalizedNames)*limit))
 
 	var payload struct {
 		Data []struct {
-			Name     string `json:"name"`
-			Content  string `json:"content"`
-			Creation string `json:"creation"`
+			Name          string `json:"name"`
+			Content       string `json:"content"`
+			Creation      string `json:"creation"`
+			ReferenceName string `json:"reference_name"`
 		} `json:"data"`
 	}
 	endpoint := normalized + "/api/resource/Comment?" + params.Encode()
@@ -408,15 +409,27 @@ func (c *Client) ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKe
 		return nil, err
 	}
 
-	items := make([]Comment, 0, len(payload.Data))
+	itemsByName := make(map[string][]Comment, len(normalizedNames))
 	for _, row := range payload.Data {
-		items = append(items, Comment{
+		name := strings.TrimSpace(row.ReferenceName)
+		if name == "" {
+			continue
+		}
+		if len(itemsByName[name]) >= limit {
+			continue
+		}
+		itemsByName[name] = append(itemsByName[name], Comment{
 			ID:        strings.TrimSpace(row.Name),
 			Content:   strings.TrimSpace(row.Content),
 			CreatedAt: strings.TrimSpace(row.Creation),
 		})
 	}
-	return items, nil
+	for _, name := range normalizedNames {
+		if _, ok := itemsByName[name]; !ok {
+			itemsByName[name] = []Comment{}
+		}
+	}
+	return itemsByName, nil
 }
 
 func (c *Client) AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error {
@@ -637,12 +650,15 @@ func (c *Client) searchItemsByCodes(ctx context.Context, normalized, apiKey, api
 	if len(itemCodes) == 0 {
 		return []Item{}, nil
 	}
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 {
 		limit = 20
 	}
+	if limit > 200 {
+		limit = 200
+	}
 
-	if len(itemCodes) > 200 {
-		itemCodes = itemCodes[:200]
+	if len(itemCodes) > 500 {
+		itemCodes = itemCodes[:500]
 	}
 
 	filtersJSON, _ := json.Marshal([][]interface{}{

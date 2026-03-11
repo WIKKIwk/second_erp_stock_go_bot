@@ -71,13 +71,14 @@ func (a *ERPAuthenticator) adminSuppliersWithOptions(ctx context.Context, limit 
 	if err != nil {
 		return nil, err
 	}
+	states, err := a.adminSupplierStates()
+	if err != nil {
+		return nil, err
+	}
 
 	result := make([]AdminSupplier, 0, len(items))
 	for _, item := range items {
-		state, err := a.adminSupplierState(item.ID)
-		if err != nil {
-			return nil, err
-		}
+		state := states[strings.TrimSpace(item.ID)]
 		if state.Removed && !includeRemoved {
 			continue
 		}
@@ -307,13 +308,14 @@ func (a *ERPAuthenticator) AdminRegenerateSupplierCode(ctx context.Context, ref 
 	if err != nil {
 		return AdminSupplierDetail{}, err
 	}
+	states, err := a.adminSupplierStates()
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
 
 	existingCodes := make(map[string]struct{}, len(items))
 	for _, candidate := range items {
-		candidateState, err := a.adminSupplierState(candidate.ID)
-		if err != nil {
-			return AdminSupplierDetail{}, err
-		}
+		candidateState := states[strings.TrimSpace(candidate.ID)]
 		if candidateState.Removed {
 			continue
 		}
@@ -447,6 +449,13 @@ func (a *ERPAuthenticator) adminSupplierState(ref string) (AdminSupplierState, e
 		return AdminSupplierState{}, nil
 	}
 	return a.supplierAdmin.Get(strings.TrimSpace(ref))
+}
+
+func (a *ERPAuthenticator) adminSupplierStates() (map[string]AdminSupplierState, error) {
+	if a.supplierAdmin == nil {
+		return map[string]AdminSupplierState{}, nil
+	}
+	return a.supplierAdmin.List()
 }
 
 func (a *ERPAuthenticator) saveAdminSupplierState(ref string, state AdminSupplierState) error {

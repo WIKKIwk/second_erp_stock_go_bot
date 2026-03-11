@@ -20,6 +20,9 @@ type fakeERPClient struct {
 	supplierItems     map[string]map[string]bool
 	uploadedAvatarURL string
 	comments          map[string][]erpnext.Comment
+	supplierReceipts  []erpnext.PurchaseReceiptDraft
+	telegramReceipts  []erpnext.PurchaseReceiptDraft
+	batchCommentKeys  [][]string
 }
 
 func (f *fakeERPClient) SearchItems(_ context.Context, _, _, _, query string, limit int) ([]erpnext.Item, error) {
@@ -132,6 +135,9 @@ func (f *fakeERPClient) ListPendingPurchaseReceipts(_ context.Context, _, _, _ s
 }
 
 func (f *fakeERPClient) ListTelegramPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+	if f.telegramReceipts != nil {
+		return append([]erpnext.PurchaseReceiptDraft(nil), f.telegramReceipts...), nil
+	}
 	return []erpnext.PurchaseReceiptDraft{
 		{
 			Name:                 "MAT-PRE-0001",
@@ -147,6 +153,9 @@ func (f *fakeERPClient) ListTelegramPurchaseReceipts(_ context.Context, _, _, _ 
 }
 
 func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+	if f.supplierReceipts != nil {
+		return append([]erpnext.PurchaseReceiptDraft(nil), f.supplierReceipts...), nil
+	}
 	return []erpnext.PurchaseReceiptDraft{
 		{
 			Name:                 "MAT-PRE-0001",
@@ -178,6 +187,15 @@ func (f *fakeERPClient) GetPurchaseReceipt(_ context.Context, _, _, _, name stri
 
 func (f *fakeERPClient) ListPurchaseReceiptComments(_ context.Context, _, _, _, name string, _ int) ([]erpnext.Comment, error) {
 	return append([]erpnext.Comment(nil), f.comments[name]...), nil
+}
+
+func (f *fakeERPClient) ListPurchaseReceiptCommentsBatch(_ context.Context, _, _, _ string, names []string, _ int) (map[string][]erpnext.Comment, error) {
+	f.batchCommentKeys = append(f.batchCommentKeys, append([]string(nil), names...))
+	result := make(map[string][]erpnext.Comment, len(names))
+	for _, name := range names {
+		result[name] = append([]erpnext.Comment(nil), f.comments[name]...)
+	}
+	return result, nil
 }
 
 func (f *fakeERPClient) AddPurchaseReceiptComment(_ context.Context, _, _, _, name, content string) error {
@@ -602,8 +620,35 @@ func TestServerAdminSupplierManagementFlow(t *testing.T) {
 }
 
 func TestServerWerkaHistoryFlow(t *testing.T) {
+	fakeERP := &fakeERPClient{
+		telegramReceipts: []erpnext.PurchaseReceiptDraft{
+			{
+				Name:                 "MAT-PRE-0001",
+				Supplier:             "SUP-001",
+				SupplierName:         "Abdulloh",
+				SupplierDeliveryNote: "TG:+998900000000|25",
+				ItemCode:             "ITEM-001",
+				ItemName:             "Rice",
+				Qty:                  25,
+				UOM:                  "Kg",
+				PostingDate:          "2026-03-10",
+			},
+			{
+				Name:                 "MAT-PRE-0002",
+				Supplier:             "SUP-001",
+				SupplierName:         "Abdulloh",
+				SupplierDeliveryNote: "TG:+998900000000|25",
+				ItemCode:             "ITEM-002",
+				ItemName:             "Oil",
+				Qty:                  25,
+				UOM:                  "Kg",
+				PostingDate:          "2026-03-10",
+				Remarks:              "Accord Qabul: 20 Kg\nAccord Qaytarildi: 5 Kg",
+			},
+		},
+	}
 	server := NewServer(NewERPAuthenticator(
-		&fakeERPClient{},
+		fakeERP,
 		"http://localhost:8000",
 		"key",
 		"secret",
@@ -635,6 +680,63 @@ func TestServerWerkaHistoryFlow(t *testing.T) {
 	}
 	if len(items) == 0 {
 		t.Fatal("expected werka history items")
+	}
+	if len(fakeERP.batchCommentKeys) != 1 {
+		t.Fatalf("expected 1 batch comment call, got %d", len(fakeERP.batchCommentKeys))
+	}
+	if len(fakeERP.batchCommentKeys[0]) != 1 || fakeERP.batchCommentKeys[0][0] != "MAT-PRE-0002" {
+		t.Fatalf("unexpected batch comment names: %+v", fakeERP.batchCommentKeys)
+	}
+}
+
+func TestServerSupplierHistorySkipsCommentBatchForCleanRecords(t *testing.T) {
+	fakeERP := &fakeERPClient{
+		supplierReceipts: []erpnext.PurchaseReceiptDraft{
+			{
+				Name:                 "MAT-PRE-0001",
+				Supplier:             "SUP-001",
+				SupplierName:         "Abdulloh",
+				SupplierDeliveryNote: "TG:+998900000000|25",
+				ItemCode:             "ITEM-001",
+				ItemName:             "Rice",
+				Qty:                  25,
+				UOM:                  "Kg",
+				PostingDate:          "2026-03-10",
+			},
+		},
+	}
+	server := NewServer(NewERPAuthenticator(
+		fakeERP,
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{
+		Role:        RoleSupplier,
+		DisplayName: "Abdulloh",
+		Ref:         "SUP-001",
+	})
+	if err != nil {
+		t.Fatalf("failed to create supplier session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/mobile/supplier/history", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected supplier history status: %d", resp.Code)
+	}
+	if len(fakeERP.batchCommentKeys) != 0 {
+		t.Fatalf("expected no batch comment calls, got %+v", fakeERP.batchCommentKeys)
 	}
 }
 

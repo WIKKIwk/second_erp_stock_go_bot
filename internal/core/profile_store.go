@@ -13,8 +13,10 @@ type ProfilePrefs struct {
 }
 
 type ProfileStore struct {
-	path string
-	mu   sync.Mutex
+	path   string
+	mu     sync.Mutex
+	loaded bool
+	cache  map[string]ProfilePrefs
 }
 
 func NewProfileStore(path string) *ProfileStore {
@@ -25,7 +27,7 @@ func (s *ProfileStore) Get(key string) (ProfilePrefs, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return ProfilePrefs{}, err
 	}
@@ -36,12 +38,28 @@ func (s *ProfileStore) Put(key string, prefs ProfilePrefs) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	all, err := s.readAllLocked()
+	all, err := s.loadAllLocked()
 	if err != nil {
 		return err
 	}
 	all[key] = prefs
 	return s.writeAllLocked(all)
+}
+
+func (s *ProfileStore) loadAllLocked() (map[string]ProfilePrefs, error) {
+	if s.loaded {
+		if s.cache == nil {
+			s.cache = map[string]ProfilePrefs{}
+		}
+		return s.cache, nil
+	}
+	all, err := s.readAllLocked()
+	if err != nil {
+		return nil, err
+	}
+	s.cache = all
+	s.loaded = true
+	return s.cache, nil
 }
 
 func (s *ProfileStore) readAllLocked() (map[string]ProfilePrefs, error) {
@@ -91,5 +109,18 @@ func (s *ProfileStore) writeAllLocked(data map[string]ProfilePrefs) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, s.path)
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		return err
+	}
+	s.cache = cloneProfilePrefsMap(data)
+	s.loaded = true
+	return nil
+}
+
+func cloneProfilePrefsMap(input map[string]ProfilePrefs) map[string]ProfilePrefs {
+	cloned := make(map[string]ProfilePrefs, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
 }

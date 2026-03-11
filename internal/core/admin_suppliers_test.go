@@ -104,6 +104,10 @@ func (s *adminSuppliersERPStub) ListPurchaseReceiptComments(ctx context.Context,
 	return nil, nil
 }
 
+func (s *adminSuppliersERPStub) ListPurchaseReceiptCommentsBatch(ctx context.Context, baseURL, apiKey, apiSecret string, names []string, limit int) (map[string][]erpnext.Comment, error) {
+	return map[string][]erpnext.Comment{}, nil
+}
+
 func (s *adminSuppliersERPStub) AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error {
 	return nil
 }

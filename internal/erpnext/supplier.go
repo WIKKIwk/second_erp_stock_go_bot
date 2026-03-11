@@ -26,8 +26,11 @@ func (c *Client) SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 {
 		limit = 20
+	}
+	if limit > 500 {
+		limit = 500
 	}
 
 	filtersJSON, _ := json.Marshal([][]interface{}{
@@ -45,6 +48,7 @@ func (c *Client) SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret
 			{"name", "like", like},
 			{"supplier_name", "like", like},
 			{"mobile_no", "like", like},
+			{"supplier_details", "like", like},
 		})
 		params.Set("or_filters", string(orFiltersJSON))
 	}

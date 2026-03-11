@@ -114,10 +114,14 @@ func TestSearchSupplierItems(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"message":[{"value":"SUP-001"}]}`))
+		case "/api/resource/Item Supplier":
+			if got := r.URL.Query().Get("parent"); got != "Item" {
+				http.Error(w, "missing parent doctype", http.StatusForbidden)
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":[{"parent":"ITEM-001"}]}`))
 		case "/api/resource/Item":
 			_, _ = w.Write([]byte(`{"data":[{"name":"ITEM-001","item_name":"Rice","stock_uom":"Kg"}]}`))
-		case "/api/resource/Item/ITEM-001":
-			_, _ = w.Write([]byte(`{"data":{"default_supplier":"","supplier_items":[{"supplier":"SUP-001"}]}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -131,6 +135,40 @@ func TestSearchSupplierItems(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Code != "ITEM-001" || items[0].UOM != "Kg" {
 		t.Fatalf("unexpected supplier items: %+v", items)
+	}
+}
+
+func TestListPurchaseReceiptCommentsBatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/resource/Comment" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[
+			{"name":"COMM-001","content":"First","creation":"2026-03-10 10:00:00","reference_name":"MAT-PRE-0001"},
+			{"name":"COMM-002","content":"Second","creation":"2026-03-10 10:05:00","reference_name":"MAT-PRE-0001"},
+			{"name":"COMM-003","content":"Third","creation":"2026-03-10 11:00:00","reference_name":"MAT-PRE-0002"}
+		]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	itemsByName, err := client.ListPurchaseReceiptCommentsBatch(
+		context.Background(),
+		server.URL,
+		"key",
+		"secret",
+		[]string{"MAT-PRE-0001", "MAT-PRE-0002"},
+		10,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(itemsByName["MAT-PRE-0001"]) != 2 {
+		t.Fatalf("expected 2 comments for MAT-PRE-0001, got %+v", itemsByName["MAT-PRE-0001"])
+	}
+	if len(itemsByName["MAT-PRE-0002"]) != 1 {
+		t.Fatalf("expected 1 comment for MAT-PRE-0002, got %+v", itemsByName["MAT-PRE-0002"])
 	}
 }
 
