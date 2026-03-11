@@ -402,6 +402,7 @@ func (s *Server) handleWerkaConfirm(w http.ResponseWriter, r *http.Request) {
 		req.AcceptedQty,
 		req.ReturnedQty,
 		req.ReturnReason,
+		req.ReturnComment,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "receipt confirm failed"})

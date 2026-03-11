@@ -383,7 +383,7 @@ func TestCreateDraftAndSubmitPurchaseReceipt(t *testing.T) {
 		t.Fatalf("unexpected draft: %+v", draft)
 	}
 
-	result, err := client.ConfirmAndSubmitPurchaseReceipt(context.Background(), server.URL, "key", "secret", "MAT-PRE-0001", 7, 0, "")
+	result, err := client.ConfirmAndSubmitPurchaseReceipt(context.Background(), server.URL, "key", "secret", "MAT-PRE-0001", 7, 0, "", "")
 	if err != nil {
 		t.Fatalf("unexpected submit error: %v", err)
 	}

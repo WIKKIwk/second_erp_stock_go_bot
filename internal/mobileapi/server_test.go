@@ -196,7 +196,7 @@ func (f *fakeERPClient) CreateDraftPurchaseReceipt(_ context.Context, _, _, _ st
 	return erpnext.PurchaseReceiptDraft{}, nil
 }
 
-func (f *fakeERPClient) ConfirmAndSubmitPurchaseReceipt(_ context.Context, _, _, _, _ string, _, _ float64, _ string) (erpnext.PurchaseReceiptSubmissionResult, error) {
+func (f *fakeERPClient) ConfirmAndSubmitPurchaseReceipt(_ context.Context, _, _, _, _ string, _, _ float64, _, _ string) (erpnext.PurchaseReceiptSubmissionResult, error) {
 	return erpnext.PurchaseReceiptSubmissionResult{}, nil
 }
 

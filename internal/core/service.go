@@ -45,7 +45,7 @@ type ERPClient interface {
 	ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]erpnext.Comment, error)
 	AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
-	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason string) (erpnext.PurchaseReceiptSubmissionResult, error)
+	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason, returnComment string) (erpnext.PurchaseReceiptSubmissionResult, error)
 	UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error)
 }
 
@@ -428,7 +428,7 @@ func (a *ERPAuthenticator) resolveWarehouse(ctx context.Context) (string, error)
 	return strings.TrimSpace(items[0].Name), nil
 }
 
-func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string, acceptedQty, returnedQty float64, returnReason string) (DispatchRecord, error) {
+func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string, acceptedQty, returnedQty float64, returnReason, returnComment string) (DispatchRecord, error) {
 	result, err := a.erp.ConfirmAndSubmitPurchaseReceipt(
 		ctx,
 		a.baseURL,
@@ -438,6 +438,7 @@ func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string,
 		acceptedQty,
 		returnedQty,
 		returnReason,
+		returnComment,
 	)
 	if err != nil {
 		return DispatchRecord{}, err

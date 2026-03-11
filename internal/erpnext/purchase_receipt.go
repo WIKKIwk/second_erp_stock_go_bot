@@ -473,13 +473,13 @@ func (c *Client) AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey,
 	return c.addComment(ctx, normalized, apiKey, apiSecret, "Purchase Receipt", name, content)
 }
 
-func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason string) (PurchaseReceiptSubmissionResult, error) {
+func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason, returnComment string) (PurchaseReceiptSubmissionResult, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {
 		return PurchaseReceiptSubmissionResult{}, err
 	}
-	if acceptedQty <= 0 {
-		return PurchaseReceiptSubmissionResult{}, fmt.Errorf("accepted qty must be greater than 0")
+	if acceptedQty < 0 {
+		return PurchaseReceiptSubmissionResult{}, fmt.Errorf("accepted qty cannot be negative")
 	}
 
 	doc, err := c.fetchPurchaseReceiptDoc(ctx, normalized, apiKey, apiSecret, name)
@@ -494,7 +494,7 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	if acceptedQty > draft.Qty {
 		return PurchaseReceiptSubmissionResult{}, fmt.Errorf("accepted qty cannot exceed sent qty")
 	}
-	decisionNote, err := buildAccordDecisionNote(draft, acceptedQty, returnedQty, returnReason)
+	decisionNote, err := buildAccordDecisionNote(draft, acceptedQty, returnedQty, returnReason, returnComment)
 	if err != nil {
 		return PurchaseReceiptSubmissionResult{}, err
 	}
@@ -518,7 +518,7 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	firstItem["received_qty"] = acceptedQty
 	firstItem["stock_qty"] = stockQty
 	firstItem["received_stock_qty"] = stockQty
-	firstItem["rejected_qty"] = 0
+	firstItem["rejected_qty"] = returnedQty
 	firstItem["rejected_warehouse"] = ""
 	firstItem["allow_zero_valuation_rate"] = 1
 	if _, ok := firstItem["rate"]; !ok {
@@ -813,15 +813,20 @@ const (
 	accordAcceptedLinePrefix = "Accord Qabul:"
 	accordReturnedLinePrefix = "Accord Qaytarildi:"
 	accordReasonLinePrefix   = "Accord Sabab:"
+	accordCommentLinePrefix  = "Accord Izoh:"
 )
 
-func buildAccordDecisionNote(draft PurchaseReceiptDraft, acceptedQty, returnedQty float64, returnReason string) (string, error) {
+func buildAccordDecisionNote(draft PurchaseReceiptDraft, acceptedQty, returnedQty float64, returnReason, returnComment string) (string, error) {
 	impliedReturnedQty := draft.Qty - acceptedQty
 	if impliedReturnedQty < 0 {
 		impliedReturnedQty = 0
 	}
+	trimmedComment := strings.TrimSpace(returnComment)
 	if impliedReturnedQty <= 0 {
 		return "", nil
+	}
+	if acceptedQty == 0 && trimmedComment == "" {
+		return "", fmt.Errorf("return comment is required when everything is returned")
 	}
 
 	if returnedQty < 0 {
@@ -841,6 +846,9 @@ func buildAccordDecisionNote(draft PurchaseReceiptDraft, acceptedQty, returnedQt
 	if strings.TrimSpace(returnReason) != "" {
 		lines = append(lines, accordReasonLinePrefix+" "+strings.TrimSpace(returnReason))
 	}
+	if trimmedComment != "" {
+		lines = append(lines, accordCommentLinePrefix+" "+trimmedComment)
+	}
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -854,7 +862,8 @@ func upsertAccordDecisionInRemarks(existing, decision string) string {
 		}
 		if strings.HasPrefix(trimmed, accordAcceptedLinePrefix) ||
 			strings.HasPrefix(trimmed, accordReturnedLinePrefix) ||
-			strings.HasPrefix(trimmed, accordReasonLinePrefix) {
+			strings.HasPrefix(trimmed, accordReasonLinePrefix) ||
+			strings.HasPrefix(trimmed, accordCommentLinePrefix) {
 			continue
 		}
 		filtered = append(filtered, trimmed)
@@ -877,6 +886,8 @@ func ExtractAccordDecisionNote(remarks string) string {
 			result = append(result, "Qaytarildi: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordReturnedLinePrefix)))
 		case strings.HasPrefix(trimmed, accordReasonLinePrefix):
 			result = append(result, "Sabab: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordReasonLinePrefix)))
+		case strings.HasPrefix(trimmed, accordCommentLinePrefix):
+			result = append(result, "Izoh: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordCommentLinePrefix)))
 		}
 	}
 	return strings.Join(result, "\n")

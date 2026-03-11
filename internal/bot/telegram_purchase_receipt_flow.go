@@ -173,7 +173,7 @@ func handleWarehouseNoticeText(ctx context.Context, api *tgbotapi.BotAPI, servic
 	}
 
 	creds, _ := service.creds.Get(principalID)
-	result, err := service.erp.ConfirmAndSubmitPurchaseReceipt(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, session.NoticeReceiptName, qty, 0, "")
+	result, err := service.erp.ConfirmAndSubmitPurchaseReceipt(ctx, creds.BaseURL, creds.APIKey, creds.APISecret, session.NoticeReceiptName, qty, 0, "", "")
 	if err != nil {
 		log.Printf("purchase receipt submit failed: receipt=%s qty=%.4f err=%v", session.NoticeReceiptName, qty, err)
 		if session.PromptMessageID > 0 {

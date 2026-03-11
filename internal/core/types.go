@@ -71,10 +71,11 @@ type CreateDispatchRequest struct {
 }
 
 type ConfirmReceiptRequest struct {
-	ReceiptID    string  `json:"receipt_id"`
-	AcceptedQty  float64 `json:"accepted_qty"`
-	ReturnedQty  float64 `json:"returned_qty"`
-	ReturnReason string  `json:"return_reason"`
+	ReceiptID     string  `json:"receipt_id"`
+	AcceptedQty   float64 `json:"accepted_qty"`
+	ReturnedQty   float64 `json:"returned_qty"`
+	ReturnReason  string  `json:"return_reason"`
+	ReturnComment string  `json:"return_comment"`
 }
 
 type NotificationCommentCreateRequest struct {
