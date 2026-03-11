@@ -32,6 +32,7 @@ type fcmSender struct {
 		Token() (*oauth2.Token, error)
 	}
 	projectID string
+	endpoint  string
 }
 
 func newPushSender(store *PushTokenStore) pushSender {
@@ -58,6 +59,7 @@ func newPushSender(store *PushTokenStore) pushSender {
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		tokenSrc:   creds.TokenSource,
 		projectID:  strings.TrimSpace(meta.ProjectID),
+		endpoint:   fmt.Sprintf("https://fcm.googleapis.com/v1/projects/%s/messages:send", strings.TrimSpace(meta.ProjectID)),
 	}
 }
 
@@ -90,7 +92,6 @@ func (s *fcmSender) SendToKey(ctx context.Context, key, title, body string, data
 	if err != nil {
 		return err
 	}
-	endpoint := fmt.Sprintf("https://fcm.googleapis.com/v1/projects/%s/messages:send", s.projectID)
 	for _, item := range tokens {
 		payload := map[string]interface{}{
 			"message": map[string]interface{}{
@@ -110,7 +111,7 @@ func (s *fcmSender) SendToKey(ctx context.Context, key, title, body string, data
 			},
 		}
 		raw, _ := json.Marshal(payload)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint, bytes.NewReader(raw))
 		if err != nil {
 			return err
 		}
@@ -119,6 +120,10 @@ func (s *fcmSender) SendToKey(ctx context.Context, key, title, body string, data
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			return fmt.Errorf("fcm send failed with status %d", resp.StatusCode)
 		}
 		_ = resp.Body.Close()
 	}
