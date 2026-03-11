@@ -498,6 +498,29 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	if err != nil {
 		return PurchaseReceiptSubmissionResult{}, err
 	}
+	fullReturn := acceptedQty == 0 && returnedQty >= draft.Qty && draft.Qty > 0
+
+	if fullReturn {
+		if strings.TrimSpace(decisionNote) != "" {
+			updateEndpoint := normalized + "/api/resource/Purchase%20Receipt/" + url.PathEscape(name)
+			if err := c.doJSONRequest(ctx, http.MethodPut, updateEndpoint, apiKey, apiSecret, map[string]string{
+				"remarks": upsertAccordDecisionInRemarks(strings.TrimSpace(draft.Remarks), decisionNote),
+			}, nil); err != nil {
+				return PurchaseReceiptSubmissionResult{}, err
+			}
+			_ = c.addComment(ctx, normalized, apiKey, apiSecret, "Purchase Receipt", name, decisionNote)
+		}
+		return PurchaseReceiptSubmissionResult{
+			Name:                 name,
+			Supplier:             draft.Supplier,
+			ItemCode:             draft.ItemCode,
+			UOM:                  draft.UOM,
+			SentQty:              draft.Qty,
+			AcceptedQty:          0,
+			SupplierDeliveryNote: draft.SupplierDeliveryNote,
+			Note:                 ExtractAccordDecisionNote(decisionNote),
+		}, nil
+	}
 
 	items, ok := doc["items"].([]interface{})
 	if !ok || len(items) == 0 {
@@ -519,7 +542,11 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	firstItem["stock_qty"] = stockQty
 	firstItem["received_stock_qty"] = stockQty
 	firstItem["rejected_qty"] = returnedQty
-	firstItem["rejected_warehouse"] = ""
+	if returnedQty > 0 {
+		firstItem["rejected_warehouse"] = getStringValue(firstItem["warehouse"])
+	} else {
+		firstItem["rejected_warehouse"] = ""
+	}
 	firstItem["allow_zero_valuation_rate"] = 1
 	if _, ok := firstItem["rate"]; !ok {
 		firstItem["rate"] = 0
@@ -888,6 +915,28 @@ func ExtractAccordDecisionNote(remarks string) string {
 		}
 	}
 	return strings.Join(result, "\n")
+}
+
+func ExtractAccordDecisionQuantities(remarks string) (acceptedQty, returnedQty float64) {
+	lines := strings.Split(strings.ReplaceAll(remarks, "\r\n", "\n"), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, accordAcceptedLinePrefix):
+			value := strings.TrimSpace(strings.TrimPrefix(trimmed, accordAcceptedLinePrefix))
+			fields := strings.Fields(value)
+			if len(fields) > 0 {
+				acceptedQty, _ = strconv.ParseFloat(fields[0], 64)
+			}
+		case strings.HasPrefix(trimmed, accordReturnedLinePrefix):
+			value := strings.TrimSpace(strings.TrimPrefix(trimmed, accordReturnedLinePrefix))
+			fields := strings.Fields(value)
+			if len(fields) > 0 {
+				returnedQty, _ = strconv.ParseFloat(fields[0], 64)
+			}
+		}
+	}
+	return acceptedQty, returnedQty
 }
 
 func buildTelegramReceiptMarker(phone string, qty float64, now time.Time) string {

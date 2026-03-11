@@ -296,7 +296,11 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
-		result = append(result, mapPurchaseReceiptToDispatchRecord(item, item.SupplierName))
+		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
+		if record.Status != "pending" {
+			continue
+		}
+		result = append(result, record)
 	}
 	return result, nil
 }
@@ -632,6 +636,12 @@ func bytesReader(content []byte) *bytes.Reader {
 }
 
 func mapDispatchStatus(item erpnext.PurchaseReceiptDraft, sentQty float64) (string, float64) {
+	if item.DocStatus == 0 {
+		acceptedFromNote, returnedFromNote := erpnext.ExtractAccordDecisionQuantities(item.Remarks)
+		if acceptedFromNote <= 0 && returnedFromNote >= sentQty && returnedFromNote > 0 {
+			return "cancelled", 0
+		}
+	}
 	if item.DocStatus == 2 || strings.EqualFold(strings.TrimSpace(item.Status), "Cancelled") {
 		return "cancelled", 0
 	}

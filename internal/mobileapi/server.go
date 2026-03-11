@@ -405,6 +405,7 @@ func (s *Server) handleWerkaConfirm(w http.ResponseWriter, r *http.Request) {
 		req.ReturnComment,
 	)
 	if err != nil {
+		log.Printf("werka confirm failed for %s accepted=%.4f returned=%.4f reason=%q comment=%q: %v", req.ReceiptID, req.AcceptedQty, req.ReturnedQty, req.ReturnReason, req.ReturnComment, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "receipt confirm failed"})
 		return
 	}
