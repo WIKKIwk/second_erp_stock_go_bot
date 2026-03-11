@@ -44,6 +44,7 @@ type ERPClient interface {
 	GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string) (erpnext.PurchaseReceiptDraft, error)
 	ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]erpnext.Comment, error)
 	AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error
+	UpdatePurchaseReceiptRemarks(ctx context.Context, baseURL, apiKey, apiSecret, name, remarks string) error
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
 	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason, returnComment string) (erpnext.PurchaseReceiptSubmissionResult, error)
 	UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error)
@@ -371,6 +372,19 @@ func (a *ERPAuthenticator) AddNotificationComment(ctx context.Context, principal
 	formatted := formatNotificationComment(principal, trimmedMessage)
 	if err := a.erp.AddPurchaseReceiptComment(ctx, a.baseURL, a.apiKey, a.apiSecret, detail.Record.ID, formatted); err != nil {
 		return NotificationDetail{}, err
+	}
+	if principal.Role == RoleSupplier && isSupplierAcknowledgmentMessage(trimmedMessage) {
+		draft, err := a.erp.GetPurchaseReceipt(ctx, a.baseURL, a.apiKey, a.apiSecret, detail.Record.ID)
+		if err != nil {
+			return NotificationDetail{}, err
+		}
+		remarks := erpnext.UpsertSupplierAcknowledgmentInRemarks(
+			draft.Remarks,
+			trimmedMessage,
+		)
+		if err := a.erp.UpdatePurchaseReceiptRemarks(ctx, a.baseURL, a.apiKey, a.apiSecret, detail.Record.ID, remarks); err != nil {
+			return NotificationDetail{}, err
+		}
 	}
 	return a.NotificationDetail(ctx, principal, receiptID)
 }
@@ -734,6 +748,10 @@ func sanitizeNotificationComment(content string) string {
 		filtered = append(filtered, cleaned)
 	}
 	return strings.Join(filtered, "\n")
+}
+
+func isSupplierAcknowledgmentMessage(message string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(message)), "tasdiqlayman")
 }
 
 func dispatchStatusFromQuantities(sentQty, acceptedQty float64) string {

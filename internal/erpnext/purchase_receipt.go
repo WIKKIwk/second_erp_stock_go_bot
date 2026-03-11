@@ -841,6 +841,7 @@ const (
 	accordReturnedLinePrefix = "Accord Qaytarildi:"
 	accordReasonLinePrefix   = "Accord Sabab:"
 	accordCommentLinePrefix  = "Accord Izoh:"
+	accordSupplierAckPrefix  = "Accord Supplier Tasdiq:"
 )
 
 func buildAccordDecisionNote(draft PurchaseReceiptDraft, acceptedQty, returnedQty float64, returnReason, returnComment string) (string, error) {
@@ -887,7 +888,8 @@ func upsertAccordDecisionInRemarks(existing, decision string) string {
 		if strings.HasPrefix(trimmed, accordAcceptedLinePrefix) ||
 			strings.HasPrefix(trimmed, accordReturnedLinePrefix) ||
 			strings.HasPrefix(trimmed, accordReasonLinePrefix) ||
-			strings.HasPrefix(trimmed, accordCommentLinePrefix) {
+			strings.HasPrefix(trimmed, accordCommentLinePrefix) ||
+			strings.HasPrefix(trimmed, accordSupplierAckPrefix) {
 			continue
 		}
 		filtered = append(filtered, trimmed)
@@ -912,6 +914,8 @@ func ExtractAccordDecisionNote(remarks string) string {
 			result = append(result, "Sabab: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordReasonLinePrefix)))
 		case strings.HasPrefix(trimmed, accordCommentLinePrefix):
 			result = append(result, "Izoh: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordCommentLinePrefix)))
+		case strings.HasPrefix(trimmed, accordSupplierAckPrefix):
+			result = append(result, "Supplier tasdiqladi: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordSupplierAckPrefix)))
 		}
 	}
 	return strings.Join(result, "\n")
@@ -937,6 +941,34 @@ func ExtractAccordDecisionQuantities(remarks string) (acceptedQty, returnedQty f
 		}
 	}
 	return acceptedQty, returnedQty
+}
+
+func UpsertSupplierAcknowledgmentInRemarks(existingNote, message string) string {
+	lines := strings.Split(strings.ReplaceAll(existingNote, "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Supplier tasdiqladi:") {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	filtered = append(filtered, accordSupplierAckPrefix+" "+strings.TrimSpace(message))
+	return strings.Join(filtered, "\n")
+}
+
+func (c *Client) UpdatePurchaseReceiptRemarks(ctx context.Context, baseURL, apiKey, apiSecret, name, remarks string) error {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return err
+	}
+	endpoint := normalized + "/api/resource/Purchase%20Receipt/" + url.PathEscape(strings.TrimSpace(name))
+	return c.doJSONRequest(ctx, http.MethodPut, endpoint, apiKey, apiSecret, map[string]string{
+		"remarks": strings.TrimSpace(remarks),
+	}, nil)
 }
 
 func buildTelegramReceiptMarker(phone string, qty float64, now time.Time) string {

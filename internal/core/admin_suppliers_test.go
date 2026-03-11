@@ -108,6 +108,10 @@ func (s *adminSuppliersERPStub) AddPurchaseReceiptComment(ctx context.Context, b
 	return nil
 }
 
+func (s *adminSuppliersERPStub) UpdatePurchaseReceiptRemarks(ctx context.Context, baseURL, apiKey, apiSecret, name, remarks string) error {
+	return nil
+}
+
 func (s *adminSuppliersERPStub) CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
 	return erpnext.PurchaseReceiptDraft{}, nil
 }

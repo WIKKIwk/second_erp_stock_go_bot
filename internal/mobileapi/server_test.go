@@ -192,6 +192,10 @@ func (f *fakeERPClient) AddPurchaseReceiptComment(_ context.Context, _, _, _, na
 	return nil
 }
 
+func (f *fakeERPClient) UpdatePurchaseReceiptRemarks(_ context.Context, _, _, _, name, remarks string) error {
+	return nil
+}
+
 func (f *fakeERPClient) CreateDraftPurchaseReceipt(_ context.Context, _, _, _ string, _ erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
 	return erpnext.PurchaseReceiptDraft{}, nil
 }
