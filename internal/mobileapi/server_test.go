@@ -20,6 +20,7 @@ type fakeERPClient struct {
 	supplierItems     map[string]map[string]bool
 	uploadedAvatarURL string
 	comments          map[string][]erpnext.Comment
+	pendingReceipts   []erpnext.PurchaseReceiptDraft
 	supplierReceipts  []erpnext.PurchaseReceiptDraft
 	telegramReceipts  []erpnext.PurchaseReceiptDraft
 	batchCommentKeys  [][]string
@@ -131,6 +132,9 @@ func (f *fakeERPClient) UpdateSupplierContact(_ context.Context, _, _, _, id, ph
 }
 
 func (f *fakeERPClient) ListPendingPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+	if f.pendingReceipts != nil {
+		return append([]erpnext.PurchaseReceiptDraft(nil), f.pendingReceipts...), nil
+	}
 	return nil, nil
 }
 
@@ -686,6 +690,63 @@ func TestServerWerkaHistoryFlow(t *testing.T) {
 	}
 	if len(fakeERP.batchCommentKeys[0]) != 1 || fakeERP.batchCommentKeys[0][0] != "MAT-PRE-0002" {
 		t.Fatalf("unexpected batch comment names: %+v", fakeERP.batchCommentKeys)
+	}
+}
+
+func TestServerWerkaPendingIncludesDraftReceipts(t *testing.T) {
+	fakeERP := &fakeERPClient{
+		pendingReceipts: []erpnext.PurchaseReceiptDraft{
+			{
+				Name:                 "MAT-PRE-0001",
+				Supplier:             "SUP-001",
+				SupplierName:         "Abdulloh",
+				SupplierDeliveryNote: "TG:+998900000000|2",
+				ItemCode:             "ITEM-001",
+				ItemName:             "Rice",
+				Qty:                  2,
+				UOM:                  "Kg",
+				PostingDate:          "2026-03-11",
+				Status:               "Draft",
+				DocStatus:            0,
+			},
+		},
+	}
+	server := NewServer(NewERPAuthenticator(
+		fakeERP,
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{Role: RoleWerka, DisplayName: "Werka"})
+	if err != nil {
+		t.Fatalf("failed to create werka session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/mobile/werka/pending", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected werka pending status: %d", resp.Code)
+	}
+
+	var items []DispatchRecord
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		t.Fatalf("failed to decode werka pending: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 pending item, got %+v", items)
+	}
+	if items[0].ID != "MAT-PRE-0001" || items[0].Status != "draft" {
+		t.Fatalf("unexpected pending item payload: %+v", items[0])
 	}
 }
 

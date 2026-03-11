@@ -346,7 +346,7 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
 		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
-		if record.Status != "pending" {
+		if record.Status != "pending" && record.Status != "draft" {
 			continue
 		}
 		result = append(result, record)
