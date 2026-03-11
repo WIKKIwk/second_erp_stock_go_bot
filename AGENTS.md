@@ -1,452 +1,396 @@
 # AGENTS.md
 
-Bu fayl keyingi AI agent uchun amaliy kontekst. Qisqa emas, to‘liq yozilgan. Maqsad: loyiha nima holatda ekanini, qaysi repo nima qilayotganini, nimani sindirmaslik kerakligini va qayerdan davom ettirish kerakligini aniq qoldirish.
+Bu fayl keyingi AI agent uchun amaliy handoff. Bu yerda eski tarix emas, hozirgi real ishlayotgan holat, nozik joylar va qayerdan davom ettirish kerakligi yozilgan.
 
-## 1. Loyihaning umumiy arxitekturasi
+## 1. Arxitektura
 
-Bu ecosystem hozir 3 ta yo‘nalishga bo‘lingan:
+Ekotizim 3 qism:
 
-1. `erpnext_stock_telegram` root repo
+1. Root repo: `/home/wikki/local.git/erpnext_stock_telegram`
    - Telegram bot
-   - root ichidagi core/backend
-   - ERPNext integratsiya kodi
-   - mobile app uchun backend endpointlar
+   - asosiy `core` backend
+   - ERPNext API integratsiya kodi
+   - mobile app uchun HTTP endpointlar
 
-2. `mobile_app/`
-   - Flutter mobile client
+2. Mobile app repo: `/home/wikki/local.git/erpnext_stock_telegram/mobile_app`
+   - Flutter client
    - alohida git repo
 
-3. `/home/wikki/storage/local.git/mobile_server`
-   - alohida standalone core/server repo
-   - Telegram botsiz ham bridge/server bo‘lib ishlaydi
-   - keyingi bosqichda mustaqil deploy qilinishi mumkin
+3. Standalone server repo: `/home/wikki/storage/local.git/mobile_server`
+   - Telegram botsiz mustaqil `core/server`
+   - alohida git repo
 
-To‘g‘ri arxitektura:
-
+To‘g‘ri oqim:
 - `Mobile App -> Core -> ERPNext`
-- `Telegram Bot -> Core or ERPNext-adapter logic`
+- `Telegram Bot -> Core / ERP adapter logic`
 - `Core -> ERPNext`
 
-Maqsad:
-- botga qaram bo‘lmaslik
-- mobile app mustaqil ishlashi
-- keyin botni faqat client/adapterga aylantirish
+Asosiy maqsad:
+- mobile app botga qaram bo‘lmasligi
+- core alohida service bo‘lishi
+- ERPNext source kodiga tegmaslik, faqat API bilan ishlash
 
-## 2. Muhim foydalanuvchi talablari
-
-Foydalanuvchi aniq xohishlari:
-
-- har bir real o‘zgarishdan keyin commit bo‘lishi kerak
-- javoblar qisqa va to‘g‘ri bo‘lishi kerak
-- ortiqcha falsafa kerak emas
-- o‘zgarishlarni amalda tekshirish kerak
-- “ishlaydi” deyilsa real tekshiruv bilan bo‘lishi kerak
-- mobile app botga qaram bo‘lib qolmasligi kerak
-- core alohida ishlay olishi kerak
-- admin panel mobile app ichida ham bo‘lishi kerak
-
-Muhim kommunikatsion eslatma:
-- foydalanuvchi juda qo‘pol so‘z ishlatadi
-- agent bunga javoban qo‘pollikni qaytarmasligi kerak
-- lekin to‘g‘ri, aniq, qattiq va qisqa gapirishi kerak
-
-## 3. ERPNext bilan ishlash bo‘yicha muhim qoida
+## 2. ERP qoida
 
 Mahalliy ERP source:
-
 - `/home/wikki/local.git/erpnext_n1/erp`
 
 Muhim:
-- foydalanuvchi ilgari aniq aytgan: ERP source kodini patch qilmaslik kerak
-- ERP bilan faqat API orqali gaplashish kerak
-- ERPNext source tree’ga edit kiritmang
+- ERP source tree’ga edit kiritmang
+- ERPNext bilan faqat API orqali gaplashing
 
-## 4. Hozirgi root repo holati
+## 3. Root repo holati
 
-Root repo:
-- path: `/home/wikki/local.git/erpnext_stock_telegram`
+Path:
+- `/home/wikki/local.git/erpnext_stock_telegram`
 
-Asosiy entrypoint’lar:
+Asosiy entrypointlar:
 - bot: [cmd/bot/main.go](/home/wikki/local.git/erpnext_stock_telegram/cmd/bot/main.go)
 - core: [cmd/core/main.go](/home/wikki/local.git/erpnext_stock_telegram/cmd/core/main.go)
-- legacy mobile server entrypoint hali bor: [cmd/mobileapi/main.go](/home/wikki/local.git/erpnext_stock_telegram/cmd/mobileapi/main.go)
+- legacy mobileapi: [cmd/mobileapi/main.go](/home/wikki/local.git/erpnext_stock_telegram/cmd/mobileapi/main.go)
 
 Asosiy package’lar:
-- bot logic: [internal/bot](/home/wikki/local.git/erpnext_stock_telegram/internal/bot)
-- new shared backend logic: [internal/core](/home/wikki/local.git/erpnext_stock_telegram/internal/core)
-- ERPNext client: [internal/erpnext](/home/wikki/local.git/erpnext_stock_telegram/internal/erpnext)
+- bot: [internal/bot](/home/wikki/local.git/erpnext_stock_telegram/internal/bot)
+- shared core logic: [internal/core](/home/wikki/local.git/erpnext_stock_telegram/internal/core)
+- ERP client: [internal/erpnext](/home/wikki/local.git/erpnext_stock_telegram/internal/erpnext)
 - HTTP layer: [internal/mobileapi](/home/wikki/local.git/erpnext_stock_telegram/internal/mobileapi)
 - config: [internal/config](/home/wikki/local.git/erpnext_stock_telegram/internal/config)
-- old supplier flatbuffer code: [internal/suplier](/home/wikki/local.git/erpnext_stock_telegram/internal/suplier)
+- legacy supplier helperlar: [internal/suplier](/home/wikki/local.git/erpnext_stock_telegram/internal/suplier)
 
-Muhim holat:
-- bot runtime flow endi supplier lookup uchun ERP’ga tayangan
-- lekin `internal/suplier` package hali repo ichida saqlanib turibdi
-- u to‘liq o‘chirib tashlanmagan
+Legacy `internal/suplier` to‘liq o‘chirilmagan, lekin runtime mobile flow ERPNext’ga tayangan.
 
-## 5. Root repo’ning run buyruqlari
+## 4. Root run buyruqlari
 
-Root `Makefile`:
+`Makefile`:
 - [Makefile](/home/wikki/local.git/erpnext_stock_telegram/Makefile)
 
-Hozir mavjud muhim targetlar:
-
-- `make run`
-  - alias to `make run-all`
-  - bot + core birga ishlaydi
-  - oldingi instance’larni tozalaydi
-
-- `make run-all`
-  - core’ni ko‘taradi
-  - keyin bot’ni ko‘taradi
-
+Muhim targetlar:
+- `make core-up`
+- `make core-stop`
+- `make core-restart`
 - `make run-core`
-  - faqat core’ni ko‘taradi
+- `make run` yoki `make run-all` botni ham ishga tushiradi
 
-- `make run-bot`
-  - faqat bot’ni ko‘taradi
+Muhim eslatma:
+- mobile/core ishlarida `make run` ishlatmang
+- to‘g‘risi: `make core-up` yoki `make core-restart`
 
-- `make stop`
-  - bot va core’ni to‘xtatadi
+### Stale core himoyasi
+
+Yangi fix bor:
+- `Makefile` endi `.core.rev` yozadi
+- `make core-up` hozirgi `git HEAD` bilan `.core.rev`ni solishtiradi
+- agar eski revision ishlayotgan bo‘lsa avtomatik restart qiladi
 
 Muhim commit:
-- root commit: `c9fb2d5`
-  - `Harden make run against stale bot and core instances`
+- `c632d3a` `Restart stale core when revision changes`
 
-Keyingi muhim commit:
-- root commit: `0f8c38f`
-  - `Extract core package and add independent core entrypoint`
+Demak keyingi agent `core` eski sessionda qolib ketdimi deb alohida shubhalanib vaqt ketkazmasin:
+- `make core-up` yoki `make core-restart` ishlating
 
-## 6. Root core’ning hozirgi holati
+## 5. Root backendning real hozirgi imkoniyatlari
 
-Root core endpointlari:
-- health: `/healthz`
-- login/logout/me/profile
-- supplier history/items/dispatch
-- werka pending/confirm
-- admin settings
-- admin suppliers
-
-Muhim backend commitlar:
-- `ad1fa80`
-  - `Add minimal admin APIs and admin auth`
-- `9bb782a`
-  - `Use fixed mobile admin credentials`
-- `efc3d4c`
-  - `Fallback to first warehouse for supplier dispatch`
+Hozirgi endpoint oilalari:
+- auth: login/logout/me/profile/avatar
+- supplier: history/items/dispatch
+- notifications: detail/comments
+- push token register: `/v1/mobile/push/token`
+- werka: pending/history/confirm
+- admin: settings/suppliers/items/activity/werka settings
 
 Admin fixed mobile credential:
 - phone: `+998880000000`
 - code: `19621978`
 
-Bu credential root core’da fixed qo‘yilgan.
+### So‘nggi muhim backend fixlar
 
-## 7. Supplier dispatch bo‘yicha muhim fix
+- `414d40f` `Handle ERP permission errors in admin supplier detail`
+- `6472c1f` `Fix ERP item supplier child-table query`
+- `0579fb8` `Add admin supplier phone update API`
+- `0534f3e` `Add werka history API`
+- `47e58fa` `Track partial werka receipt return notes`
+- `f4774ba` `Add notification detail and comment APIs`
+- `c137df9` `Strip HTML from notification comments`
+- `c93e600` `Support full werka return comments`
+- `00a8847` `Allow full werka returns without comment`
+- `c25d496` `Handle full werka returns without ERP submit`
+- `e7c0e2c` `Propagate supplier acknowledgment to werka feed`
+- `b7bd7b1` `Emit supplier acknowledgment events for werka`
+- `7193501` `Add mobile push token registration backend`
+- `8670804` `Add Firebase push sender backend`
+- `31365c8` `Expose supplier dispatch amount data`
+- `952b56a` `Backfill supplier acknowledgment into history notes`
+- `df88db6` `Attach supplier ref to dispatch records`
+- `535784a` `Proxy supplier avatars through core`
+- `8c7acc8` `Reduce purchase receipt list round trips`
+- `a990370` `Add FCM sender tests and work plan`
 
-Muammo bo‘lgan:
-- mobile app’da `+` bosib draft Purchase Receipt yaratishda `dispatch create failed`
+### Full return mantiqi
 
-Sabab:
-- `warehouse` bo‘sh qaytayotgan edi
+Werka `accepted_qty = 0` bilan full return qilsa:
+- ERP submit yo‘liga tiqilmaydi
+- `remarks` va `Comment`ga note yoziladi
+- app tarafda `rejected/cancelled` sifatida chiqadi
 
-Fix:
-- agar default warehouse bo‘lmasa, ERP’dan birinchi warehouse avtomatik olinadi
-- shu bilan `supplier items` ham warehouse bilan qaytadi
-- draft yaratish `200 OK` bo‘ldi
+Qisman return note formatlari:
+- `Accord Qabul:`
+- `Accord Qaytarildi:`
+- `Accord Sabab:`
+- `Accord Izoh:`
+- `Accord Supplier Tasdiq:`
 
-Tekshirilgan:
-- `/v1/mobile/supplier/items`
-- `/v1/mobile/supplier/dispatch`
-
-Real tekshiruvda draft yaratildi:
-- `MAT-PRE-2026-00007`
-
-## 8. Standalone core repo
-
-Path:
-- `/home/wikki/storage/local.git/mobile_server`
-
-Remote:
-- `https://github.com/WIKKIwk/mobile_server.git`
-
-Bu repo alohida `server service` sifatida ajratilgan.
-
-Asosiy entrypoint:
-- [cmd/core/main.go](/home/wikki/storage/local.git/mobile_server/cmd/core/main.go)
-
-Asosiy package’lar:
-- [internal/core](/home/wikki/storage/local.git/mobile_server/internal/core)
-- [internal/mobileapi](/home/wikki/storage/local.git/mobile_server/internal/mobileapi)
-- [internal/erpnext](/home/wikki/storage/local.git/mobile_server/internal/erpnext)
-- [internal/config](/home/wikki/storage/local.git/mobile_server/internal/config)
-- [internal/suplier](/home/wikki/storage/local.git/mobile_server/internal/suplier)
-
-Standalone core repo commitlar:
-- `4c429e7`
-  - initial standalone core service
-- `ac58410`
-  - `Prompt for ERP credentials on make run`
-- `c1ce46d`
-  - `Always prompt ERP credentials on make run`
-- `7c96a91`
-  - `Fallback to first warehouse for supplier dispatch`
-- `fcac3b0`
-  - `Use fixed mobile admin credentials`
-
-## 9. Standalone core repo run xulqi
-
-Path:
-- [Makefile](/home/wikki/storage/local.git/mobile_server/Makefile)
-
-`make run` xulqi:
-- har safar oldingi core processlarni tozalaydi
-- `.env` ni o‘chiradi
-- keyin qayta so‘raydi:
-  - `ERP URL`
-  - `ERP API key`
-  - `ERP API secret`
-- keyin serverni ko‘taradi
-
-Real test qilingan:
-- prompt chiqdi
-- qiymatlar qabul qilindi
-- `.env` yozildi
-- `http://127.0.0.1:8081/healthz` => `{"ok":true}`
-
-Demak standalone bridge Telegram botsiz mustaqil ishlaydi.
-
-## 10. Mobile app repo
+## 6. Mobile app repo holati
 
 Path:
 - `/home/wikki/local.git/erpnext_stock_telegram/mobile_app`
 
 Bu alohida git repo.
 
-Muqim commitlardan ba’zilari:
-- `e98cc17`
-  - remote Android test + APK flow
-- `61886f8`
-  - Accord Vision branding
-- `4b7a848`
-  - release Android manifest’ga internet permission
-- `deb473e`
-  - session persistence + pull-to-refresh
-- `9452fee`
-  - supplier home’ni minimal qilish
-- `78c0214`
-  - notification visualini soddalashtirish + home navigation fix
-- `dc5640d`
-  - SVG dock iconlarni kattalashtirish
-- `c442805`
-  - minimal admin panel
-- `afc1232`
-  - admin create flows + dock visible
-- `2b5ea94`
-  - admin profile’da ham dock ko‘rinishi
+### Muhim mobile commitlar
 
-Hozirgi mobile app state:
-- supplier flow ishlaydi
-- werka flow ishlaydi
-- admin minimal panel ishlaydi
-- app session persist bo‘ladi
-- app resume bo‘lganda auto-refresh bor
-- error state’larda retry bor
-- doimiy domain bilan ishlaydi
+So‘nggi muhim commitlar:
+- `4ef7d6d` `Add cache-first loading for key screens`
+- `a47c8d3` `Refresh key screens on incoming notifications`
+- `2d6c08b` `Add Firebase messaging client integration`
+- `26a134a` `Add local Android notification runtime`
+- `60f5255` `Enable Android desugaring for notification plugin`
+- `70627b8` `Show supplier acknowledgment badge in notifications`
+- `0fa50c5` `Reset stale notification detail on account change`
+- `01827e2` `Require hold on profile dock to logout`
+- `08d6216` `Remove cards from supplier quantity screen`
+- `bd728a6` `Simplify supplier dispatch confirmation layout`
+- `3f2ef6f` `Increase supplier confirmation text hierarchy`
+- `286f19c` `Confirm werka receipt completion action`
+- `dbb8049` `Add full return flow to werka receipt screen`
+- `a3513ef` `Show return reasons for full werka returns`
+- `83279bf` `Toggle full return details cleanly`
+- `eed22ed` `Fix supplier home status counts`
+- `ac31c79` `Fix werka home in-progress counts`
+- `51107a2` `Show supplier acknowledgment notifications for werka`
+- `25111e1` `Add supplier acknowledgment action for issue receipts`
+- `4acf654` `Hide comment section on clean receipts`
+- `b920487` `Increase notification detail text size`
+- `4bcca72` `Support Linux notification initialization`
+- `f7830fb` `Show supplier acknowledgment with double-check badge`
+- `2ac08bc` `Block cross-supplier stale notification details`
+- `0f2144c` `Turn supplier recent into repeatable history`
+- `d35fda4` `Hide issue comment box after supplier acknowledgment`
+- `4e00021` `Rotate theme toggle in correct direction`
+- `b2ada08` `Unify theme toggle rotation direction`
+- `7d7b49e` `Correct sun-to-moon rotation direction`
 
-## 11. Mobile app current important behavior
+### Hozirgi mobile real holat
 
-### Session persistence
+Supplier:
+- `Home` status count tuzatilgan
+- `Notifications` admin activity stiliga yaqinlashgan
+- `Recent` endi transaction-historyga yaqin, ustiga bosib oldingi miqdor bilan qayta jo‘natish mumkin
+- `Confirm` va `Qty` cardlardan tozalangan, ixcham text ko‘rinishga o‘tgan
 
-Session root:
-- [app_session.dart](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/lib/src/core/session/app_session.dart)
+Werka:
+- `Home` va `Notifications` ajratilgan
+- `Home`da status kartalari bor
+- `Notifications`da supplier ack synthetic event ko‘rinadi
+- `Detail`da partial/full return flow, sabab tanlash, yakunlash confirm dialog bor
 
-Holat:
-- token va profile `shared_preferences`da saqlanadi
-- app qayta ochilganda role’ga qarab route tanlanadi
+Shared:
+- notification detail screen bor
+- detail screen supplier/werka uchun umumiy
+- supplier wrong stale detail holati kuchliroq bloklangan
+- profile dock’da logout faqat 3 soniya bosib turilganda chiqadi
+- theme toggle rotation direction tuzatilgan
 
-### Auto recovery
+### Avatar muammosi
 
-Mobile API wrapper:
-- [mobile_api.dart](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/lib/src/core/api/mobile_api.dart)
+Muammo:
+- desktopda rasm ko‘rinsa ham APK/Android’da ko‘rinmasligi mumkin edi
+- sabab ERP `localhost` URL’i telefonda ishlamasdi
 
-Holat:
-- 401 bo‘lsa app stored `phone + code` bilan o‘zi qayta login qiladi
-- keyin request’ni yana bir marta uradi
-- server restart bo‘lsa tiklanish osonlashadi
+Fix:
+- `core` avatar proxy endpoint qiladi
+- avatar URL `core` orqali beriladi
 
-### Error state recovery
+Muhim commit:
+- `535784a` `Proxy supplier avatars through core`
 
-Screens:
+## 7. Android APK holati
+
+Asosiy release artifact:
+- [accord.apk](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/build/app/outputs/flutter-apk/accord.apk)
+
+Muhim:
+- user domain bilan build xohlaydi
+- localhost build user uchun kerak emas
+
+To‘g‘ri buyruq:
+```bash
+cd /home/wikki/local.git/erpnext_stock_telegram/mobile_app
+make apk-domain APK_NAME=accord.apk
+```
+
+### Icon
+
+Launcher icon yangi rasm bilan update qilingan.
+
+Commit:
+- `ddb0320` `Update app launcher icon`
+
+## 8. Firebase / Push holati
+
+### Hozirgi holat
+
+Client taraf:
+- `google-services.json` local joylangan
+- `firebase_core`
+- `firebase_messaging`
+- Android gradle google-services plugin
+- login bo‘lganda FCM token register qilinadi
+
+Backend taraf:
+- push token storage bor
+- FCM sender bor
+- event paytida tokenlarga FCM push yuborishga urinadi
+
+Muhim commitlar:
+- `7193501` `Add mobile push token registration backend`
+- `8670804` `Add Firebase push sender backend`
+
+### Muhim local-only fayllar
+
+Commit qilmang:
+- `/home/wikki/local.git/erpnext_stock_telegram/oneni-ami-firebase-adminsdk-fbsvc-cd184690f6.json`
+- `/home/wikki/local.git/erpnext_stock_telegram/mobile_app/android/app/google-services.json`
+- `.env`
+
+Bu fayllar local secret/config.
+
+### Push bo‘yicha real ehtiyotkor eslatma
+
+Kod ulanib bo‘lgan, lekin keyingi agent real device verification qilishi kerak:
+- app o‘rnatiladi
+- login qilinadi
+- permission `Allow`
+- token backendga yozilganini tekshirish
+- keyin supplier/werka event bilan real push kelishini sinash
+
+Desktop `flutter run -d linux` FCM background push uchun authoritative test emas.
+Haqiqiy test Android device/APK bilan bo‘lishi kerak.
+
+## 9. Performance reja holati
+
+[WORK_PLAN.md](/home/wikki/local.git/erpnext_stock_telegram/WORK_PLAN.md)
+
+Hozir progress:
+- [x] FCM senderni tugatish
+- [x] Push kelsa auto-refresh
+- [x] Cache-first data
+- [ ] API payloadni yengillashtirish
+- [ ] Hard test
+
+### 2-bosqich: auto-refresh
+
+`RefreshHub` qo‘shilgan.
+Push/event kelganda refresh bo‘ladigan screenlar:
 - supplier home
-- recent
-- notifications
-- item picker
+- supplier notifications
+- supplier recent
 - werka home
-- profile
+- werka notifications
+- admin home
+- admin activity
 
-Holat:
-- `Qayta urinish`
-- pull-to-refresh
-- app resume bo‘lsa auto-refresh
+Commit:
+- `a47c8d3` `Refresh key screens on incoming notifications`
 
-### SVG dock icons
+### 3-bosqich: cache-first
 
-Assetlar:
-- [home-fill.svg](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/assets/icons/home-fill.svg)
-- [home-line.svg](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/assets/icons/home-line.svg)
-- [notification-3-fill.svg](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/assets/icons/notification-3-fill.svg)
-- [notification-3-line.svg](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/assets/icons/notification-3-line.svg)
-- [repeat-2-fill.svg](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/assets/icons/repeat-2-fill.svg)
-- [account-circle-fill.svg](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/assets/icons/account-circle-fill.svg)
-- [account-circle-line.svg](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/assets/icons/account-circle-line.svg)
+`JsonCacheStore` qo‘shilgan.
+Key screenlar oldin cached data ko‘rsatib, keyin network refresh qiladi.
 
-Supplier dock:
-- [supplier_dock.dart](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/lib/src/features/supplier/presentation/widgets/supplier_dock.dart)
+Commit:
+- `4ef7d6d` `Add cache-first loading for key screens`
 
-Dark/light qoidasi:
-- light theme => fill icon
-- dark theme => line icon
+### 4-bosqich: API payload optimization
 
-### Profile
+Boshlangan.
+Hozir list endpointlardagi eng yirik round-trip kamaytirilgan:
+- `ListPendingPurchaseReceipts`
+- `ListSupplierPurchaseReceipts`
+- `ListTelegramPurchaseReceipts`
 
-Profile screen:
-- [profile_screen.dart](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/lib/src/features/shared/presentation/profile_screen.dart)
+Inline fieldlar yetarli bo‘lsa har item uchun alohida `GetPurchaseReceipt` qilmaydi.
 
-Holat:
-- supplier, werka va admin uchun ishlaydi
-- avatar upload
-- nickname
-- phone read-only
-- theme switch
-- bottom dock ko‘rinadi
+Commit:
+- `8c7acc8` `Reduce purchase receipt list round trips`
 
-## 12. APK holati
+Bu bosqich hali tugamagan.
 
-Release APK path:
-- [accord-vision.apk](/home/wikki/local.git/erpnext_stock_telegram/mobile_app/build/app/outputs/flutter-apk/accord-vision.apk)
+## 10. Nozik joylar
 
-Branding:
-- app name `Accord Vision`
-- icon qo‘yilgan
-- internet permission release manifest’da bor
+1. Root repo dirty bo‘lishi mumkin:
+- `AGENTS.md`
+- `.core.rev`
+- Firebase service account JSON
+- userning boshqa local fayllari
 
-Muhim:
-- eski APK bilan chalkashmaslik uchun foydalanuvchiga ko‘pincha:
-  1. eski appni o‘chirish
-  2. yangi APK’ni o‘rnatish
-  tavsiya qilingan
+2. Mobile repo dirty bo‘lishi mumkin:
+- `android/app/google-services.json` untracked turadi
+- buni commit qilmang
 
-## 13. Domain va external access
+3. `core` eski sessionda qolib ketishi tarixi bor.
+- endi `make core-up` HEAD-aware
+- lekin shunga qaramay `git rev-parse HEAD` va `cat .core.rev` bilan tekshirish foydali
 
-Doimiy URL:
-- `https://core.wspace.sbs`
+4. `desktop preview` va `real APK` holatini aralashtirmang.
+- Android push, avatar, permission, FCM faqat real APK/device bilan to‘liq ishonchli tekshiriladi
 
-Muhim:
-- mobile app release build shu URL bilan build qilingan
-- domain hozir Cloudflare tunnel orqali root repo’dagi core’ga boradi
+5. Cross-supplier stale detail bugi uchun mobile-side guard qo‘shilgan.
+- lekin agent har safar real supplier A / supplier B bilan verify qilsa yaxshi
 
-Bir vaqtlar bo‘lgan muammo:
-- domain DNS only bo‘lib qolgan
-- keyin proxied/tunnel to‘g‘rilangan
-- tunnel process detach bo‘lmay tushib qolayotgan edi
-- keyin detached start fix qilingan
+## 11. Keyingi agent nimadan boshlasin
 
-## 14. Hozirgi eng muhim pending ishlar
-
-Admin panel bo‘yicha hali to‘liq tugamagan narsalar:
-
-1. Admin mobile UI’da:
-- supplier qo‘shish end-to-end qo‘shildi, lekin bu flow hali APK’da ko‘rib chiqilmagan bo‘lishi mumkin
-- werka page qo‘shildi, lekin premium polish hali yo‘q
-
-2. Hali qilinmagan katta funksiyalar:
-- supplier block/unblock
-- supplier delete/remove
-- supplier code regenerate
-- supplierni item’ga bog‘lash UI
-- admin home’da blocked supplier count
-
-Foydalanuvchi aynan shularni xohlagan:
-- supplier listdan supplier detail
-- mahsulotga bog‘lash
-- code regenerate
-- block/unblock
-- remove
-- home’da blocked count
-
-Bu hali to‘liq implement qilingan deb hisoblamang.
-
-## 15. Muhim xavf / nozik nuqtalar
-
-1. Root repo’da untracked fayl bor:
-- `Gemini_Generated_Image_x2c5d2x2c5d2x2c5.png`
-
-Buni tasodifan commit/push qilib yubormang.
-
-2. `.env` hech qachon commit qilinmasin.
-- root repo’da ham
-- mobile_server repo’da ham
-
-3. Standalone core repo remote ulangan, lekin push auth har doim tayyor emas.
-- GitHub auth yo‘qligida push yiqilishi mumkin
-
-4. `internal/suplier` ichidagi eski FB-related kodlar root repo’da hali turibdi.
-- runtime flow undan maksimal ajratilgan
-- lekin to‘liq cleanup hali tugamagan
-
-## 16. Keyingi AI nimadan boshlashi kerak
-
-Agar keyingi agent davom ettirsa, eng to‘g‘ri ketma-ketlik:
-
-1. Root repo cleanligini tekshirish:
+1. Root repo holatini tekshirsin:
 ```bash
 cd /home/wikki/local.git/erpnext_stock_telegram
 git status --short
 ```
 
-2. Mobile repo cleanligini tekshirish:
+2. Mobile repo holatini tekshirsin:
 ```bash
 cd /home/wikki/local.git/erpnext_stock_telegram/mobile_app
 git status --short
 ```
 
-3. Standalone core repo cleanligini tekshirish:
+3. `core` revision to‘g‘riligini tekshirsin:
 ```bash
-cd /home/wikki/storage/local.git/mobile_server
-git status --short
+cd /home/wikki/local.git/erpnext_stock_telegram
+git rev-parse HEAD
+cat .core.rev
+make core-up
+curl -sS http://127.0.0.1:8081/healthz
 ```
 
-4. Agar admin supplier-management taskini davom ettirsa:
-- root backenddagi admin API’larni tekshirish
-- mobile admin UI compile/test
-- keyin `supplier block/unblock`, `regen code`, `assign items` ni bosqichma-bosqich qo‘shish
+4. Agar performance davom ettirilsa:
+- `4. API payloadni yengillashtirish`ni bitirish
+- keyin `5. Hard test`
 
-5. Har bir real o‘zgarishdan keyin commit qilish
+5. Agar push verification qilinsa:
+- Android appni yangi `accord.apk` bilan o‘rnatish
+- login qilish
+- permission berish
+- `data/mobile_push_tokens.json` ni tekshirish
+- supplier/werka event bilan closed-app pushni real test qilish
 
-## 17. Tavsiya etiladigan keyingi commit yo‘nalishlari
+## 12. Qisqa yakun
 
-Tartibli davom ettirish uchun:
+Loyiha hozir ishlayotgan holatga yaqin:
+- core alohida service
+- mobile app supplier/werka/admin flow bilan
+- local push/runtime va FCM scaffold bor
+- stale core restart himoyasi bor
+- cache-first va auto-refresh bor
 
-1. `Add admin dock and management screens`
-2. `Add supplier blocking and code rotation`
-3. `Add supplier item assignment from admin app`
-4. `Add blocked supplier summary to admin home`
-
-## 18. Qisqa yakun
-
-Hozir loyiha holati:
-- root repo’da bot + core birga
-- core alohida entrypoint bilan ajratilgan
-- standalone `mobile_server` repo tayyor
-- mobile app supplier/werka/admin bilan ishlaydi
-- doimiy domain bor
-- APK release build bor
-
-Lekin:
-- admin supplier management hali faqat minimal darajada
-- block/regenerate/assign/remove kabi to‘liq admin operatsiyalar hali tugallanmagan
-
-Shu faylning maqsadi:
-- keyingi AI agent taxmin bilan emas
-- amaldagi real holatdan davom etsin
-- qaysi repo nima qilayotganini chalkashtirmasin
+Lekin hali to‘liq tugamagan asosiy ishlar:
+- API payload optimizationni to‘liq bitirish
+- real Android closed-app pushni hard verify qilish
+- end-to-end hard test qilish
