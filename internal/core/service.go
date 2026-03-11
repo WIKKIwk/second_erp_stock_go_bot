@@ -38,6 +38,9 @@ type ERPClient interface {
 	ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
+	GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string) (erpnext.PurchaseReceiptDraft, error)
+	ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]erpnext.Comment, error)
+	AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
 	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason string) (erpnext.PurchaseReceiptSubmissionResult, error)
 	UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error)
@@ -277,23 +280,7 @@ func (a *ERPAuthenticator) SupplierHistory(ctx context.Context, principal Princi
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
-		sentQty := item.Qty
-		if markerQty, ok := erpnext.ParseTelegramReceiptMarkerQty(item.SupplierDeliveryNote); ok && markerQty > sentQty {
-			sentQty = markerQty
-		}
-		status, acceptedQty := mapDispatchStatus(item, sentQty)
-		result = append(result, DispatchRecord{
-			ID:           item.Name,
-			SupplierName: principal.DisplayName,
-			ItemCode:     item.ItemCode,
-			ItemName:     item.ItemName,
-			UOM:          item.UOM,
-			SentQty:      sentQty,
-			AcceptedQty:  acceptedQty,
-			Note:         erpnext.ExtractAccordDecisionNote(item.Remarks),
-			Status:       status,
-			CreatedLabel: item.PostingDate,
-		})
+		result = append(result, mapPurchaseReceiptToDispatchRecord(item, principal.DisplayName))
 	}
 	return result, nil
 }
@@ -306,21 +293,7 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
-		sentQty := item.Qty
-		if markerQty, ok := erpnext.ParseTelegramReceiptMarkerQty(item.SupplierDeliveryNote); ok && markerQty > sentQty {
-			sentQty = markerQty
-		}
-		result = append(result, DispatchRecord{
-			ID:           item.Name,
-			SupplierName: item.SupplierName,
-			ItemCode:     item.ItemCode,
-			ItemName:     item.ItemName,
-			UOM:          item.UOM,
-			SentQty:      sentQty,
-			AcceptedQty:  0,
-			Status:       "pending",
-			CreatedLabel: item.PostingDate,
-		})
+		result = append(result, mapPurchaseReceiptToDispatchRecord(item, item.SupplierName))
 	}
 	return result, nil
 }
@@ -333,25 +306,66 @@ func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]Dispa
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
-		sentQty := item.Qty
-		if markerQty, ok := erpnext.ParseTelegramReceiptMarkerQty(item.SupplierDeliveryNote); ok && markerQty > sentQty {
-			sentQty = markerQty
-		}
-		status, acceptedQty := mapDispatchStatus(item, sentQty)
-		result = append(result, DispatchRecord{
-			ID:           item.Name,
-			SupplierName: item.SupplierName,
-			ItemCode:     item.ItemCode,
-			ItemName:     item.ItemName,
-			UOM:          item.UOM,
-			SentQty:      sentQty,
-			AcceptedQty:  acceptedQty,
-			Note:         erpnext.ExtractAccordDecisionNote(item.Remarks),
-			Status:       status,
-			CreatedLabel: item.PostingDate,
-		})
+		result = append(result, mapPurchaseReceiptToDispatchRecord(item, item.SupplierName))
 	}
 	return result, nil
+}
+
+func (a *ERPAuthenticator) NotificationDetail(ctx context.Context, principal Principal, receiptID string) (NotificationDetail, error) {
+	draft, err := a.erp.GetPurchaseReceipt(ctx, a.baseURL, a.apiKey, a.apiSecret, strings.TrimSpace(receiptID))
+	if err != nil {
+		return NotificationDetail{}, err
+	}
+	if principal.Role == RoleSupplier && strings.TrimSpace(draft.Supplier) != strings.TrimSpace(principal.Ref) {
+		return NotificationDetail{}, ErrUnauthorized
+	}
+
+	record := mapPurchaseReceiptToDispatchRecord(draft, draft.SupplierName)
+	if principal.Role == RoleSupplier && strings.TrimSpace(principal.DisplayName) != "" {
+		record.SupplierName = principal.DisplayName
+	}
+
+	comments, err := a.erp.ListPurchaseReceiptComments(ctx, a.baseURL, a.apiKey, a.apiSecret, draft.Name, 100)
+	if err != nil {
+		return NotificationDetail{}, err
+	}
+
+	result := make([]NotificationComment, 0, len(comments))
+	for _, item := range comments {
+		authorLabel, body := parseNotificationComment(item.Content)
+		if body == "" {
+			continue
+		}
+		result = append(result, NotificationComment{
+			ID:           item.ID,
+			AuthorLabel:  authorLabel,
+			Body:         body,
+			CreatedLabel: item.CreatedAt,
+		})
+	}
+
+	return NotificationDetail{
+		Record:   record,
+		Comments: result,
+	}, nil
+}
+
+func (a *ERPAuthenticator) AddNotificationComment(ctx context.Context, principal Principal, receiptID, message string) (NotificationDetail, error) {
+	trimmedMessage := strings.TrimSpace(message)
+	if trimmedMessage == "" {
+		return NotificationDetail{}, fmt.Errorf("comment is required")
+	}
+
+	detail, err := a.NotificationDetail(ctx, principal, receiptID)
+	if err != nil {
+		return NotificationDetail{}, err
+	}
+
+	formatted := formatNotificationComment(principal, trimmedMessage)
+	if err := a.erp.AddPurchaseReceiptComment(ctx, a.baseURL, a.apiKey, a.apiSecret, detail.Record.ID, formatted); err != nil {
+		return NotificationDetail{}, err
+	}
+	return a.NotificationDetail(ctx, principal, receiptID)
 }
 
 func (a *ERPAuthenticator) AdminActivity(ctx context.Context, limit int) ([]DispatchRecord, error) {
@@ -624,6 +638,66 @@ func mapDispatchStatus(item erpnext.PurchaseReceiptDraft, sentQty float64) (stri
 		return "draft", 0
 	}
 	return "pending", 0
+}
+
+func mapPurchaseReceiptToDispatchRecord(item erpnext.PurchaseReceiptDraft, fallbackSupplierName string) DispatchRecord {
+	sentQty := item.Qty
+	if markerQty, ok := erpnext.ParseTelegramReceiptMarkerQty(item.SupplierDeliveryNote); ok && markerQty > sentQty {
+		sentQty = markerQty
+	}
+	status, acceptedQty := mapDispatchStatus(item, sentQty)
+	supplierName := strings.TrimSpace(item.SupplierName)
+	if supplierName == "" {
+		supplierName = strings.TrimSpace(fallbackSupplierName)
+	}
+	if status == "pending" {
+		acceptedQty = 0
+	}
+	return DispatchRecord{
+		ID:           item.Name,
+		SupplierName: supplierName,
+		ItemCode:     item.ItemCode,
+		ItemName:     item.ItemName,
+		UOM:          item.UOM,
+		SentQty:      sentQty,
+		AcceptedQty:  acceptedQty,
+		Note:         erpnext.ExtractAccordDecisionNote(item.Remarks),
+		Status:       status,
+		CreatedLabel: item.PostingDate,
+	}
+}
+
+func formatNotificationComment(principal Principal, message string) string {
+	label := "Tizim"
+	switch principal.Role {
+	case RoleSupplier:
+		label = "Supplier"
+	case RoleWerka:
+		label = "Werka"
+	case RoleAdmin:
+		label = "Admin"
+	}
+	name := strings.TrimSpace(principal.DisplayName)
+	if name == "" {
+		return label + "\n" + strings.TrimSpace(message)
+	}
+	return label + " • " + name + "\n" + strings.TrimSpace(message)
+}
+
+func parseNotificationComment(content string) (string, string) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return "", ""
+	}
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) >= 2 {
+		head := strings.TrimSpace(lines[0])
+		body := strings.TrimSpace(strings.Join(lines[1:], "\n"))
+		if body != "" && (strings.HasPrefix(head, "Supplier") || strings.HasPrefix(head, "Werka") || strings.HasPrefix(head, "Admin")) {
+			return head, body
+		}
+	}
+	return "Tizim", trimmed
 }
 
 func dispatchStatusFromQuantities(sentQty, acceptedQty float64) string {

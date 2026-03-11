@@ -46,6 +46,18 @@ type DispatchRecord struct {
 	CreatedLabel string  `json:"created_label"`
 }
 
+type NotificationComment struct {
+	ID           string `json:"id"`
+	AuthorLabel  string `json:"author_label"`
+	Body         string `json:"body"`
+	CreatedLabel string `json:"created_label"`
+}
+
+type NotificationDetail struct {
+	Record   DispatchRecord        `json:"record"`
+	Comments []NotificationComment `json:"comments"`
+}
+
 type SupplierItem struct {
 	Code      string `json:"code"`
 	Name      string `json:"name"`
@@ -63,6 +75,10 @@ type ConfirmReceiptRequest struct {
 	AcceptedQty  float64 `json:"accepted_qty"`
 	ReturnedQty  float64 `json:"returned_qty"`
 	ReturnReason string  `json:"return_reason"`
+}
+
+type NotificationCommentCreateRequest struct {
+	Message string `json:"message"`
 }
 
 type ProfileUpdateRequest struct {

@@ -19,6 +19,7 @@ type fakeERPClient struct {
 	items             []erpnext.Item
 	supplierItems     map[string]map[string]bool
 	uploadedAvatarURL string
+	comments          map[string][]erpnext.Comment
 }
 
 func (f *fakeERPClient) SearchItems(_ context.Context, _, _, _, query string, limit int) ([]erpnext.Item, error) {
@@ -146,7 +147,49 @@ func (f *fakeERPClient) ListTelegramPurchaseReceipts(_ context.Context, _, _, _ 
 }
 
 func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
-	return nil, nil
+	return []erpnext.PurchaseReceiptDraft{
+		{
+			Name:                 "MAT-PRE-0001",
+			Supplier:             "SUP-001",
+			SupplierName:         "Abdulloh",
+			SupplierDeliveryNote: "TG:+998900000000|25",
+			ItemCode:             "ITEM-001",
+			ItemName:             "Rice",
+			Qty:                  25,
+			UOM:                  "Kg",
+			PostingDate:          "2026-03-10",
+		},
+	}, nil
+}
+
+func (f *fakeERPClient) GetPurchaseReceipt(_ context.Context, _, _, _, name string) (erpnext.PurchaseReceiptDraft, error) {
+	return erpnext.PurchaseReceiptDraft{
+		Name:                 name,
+		Supplier:             "SUP-001",
+		SupplierName:         "Abdulloh",
+		SupplierDeliveryNote: "TG:+998900000000|25",
+		ItemCode:             "ITEM-001",
+		ItemName:             "Rice",
+		Qty:                  25,
+		UOM:                  "Kg",
+		PostingDate:          "2026-03-10",
+	}, nil
+}
+
+func (f *fakeERPClient) ListPurchaseReceiptComments(_ context.Context, _, _, _, name string, _ int) ([]erpnext.Comment, error) {
+	return append([]erpnext.Comment(nil), f.comments[name]...), nil
+}
+
+func (f *fakeERPClient) AddPurchaseReceiptComment(_ context.Context, _, _, _, name, content string) error {
+	if f.comments == nil {
+		f.comments = map[string][]erpnext.Comment{}
+	}
+	f.comments[name] = append(f.comments[name], erpnext.Comment{
+		ID:        "COMM-001",
+		Content:   content,
+		CreatedAt: "2026-03-11 10:00:00",
+	})
+	return nil
 }
 
 func (f *fakeERPClient) CreateDraftPurchaseReceipt(_ context.Context, _, _, _ string, _ erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
@@ -583,6 +626,67 @@ func TestServerWerkaHistoryFlow(t *testing.T) {
 	}
 	if len(items) == 0 {
 		t.Fatal("expected werka history items")
+	}
+}
+
+func TestServerNotificationDetailAndCommentFlow(t *testing.T) {
+	fakeERP := &fakeERPClient{
+		comments: map[string][]erpnext.Comment{
+			"MAT-PRE-0001": {
+				{ID: "COMM-0001", Content: "Tizim\nQisman olindi.", CreatedAt: "2026-03-11 09:00:00"},
+			},
+		},
+	}
+	server := NewServer(NewERPAuthenticator(
+		fakeERP,
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{
+		Role:        RoleSupplier,
+		DisplayName: "Abdulloh",
+		Ref:         "SUP-001",
+	})
+	if err != nil {
+		t.Fatalf("failed to create supplier session: %v", err)
+	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/v1/mobile/notifications/detail?receipt_id=MAT-PRE-0001", nil)
+	detailReq.Header.Set("Authorization", "Bearer "+token)
+	detailResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(detailResp, detailReq)
+	if detailResp.Code != http.StatusOK {
+		t.Fatalf("unexpected notification detail status: %d", detailResp.Code)
+	}
+
+	commentReq := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/mobile/notifications/comments?receipt_id=MAT-PRE-0001",
+		bytes.NewReader([]byte(`{"message":"Qaytgan 1 kgni ko‘rdim"}`)),
+	)
+	commentReq.Header.Set("Authorization", "Bearer "+token)
+	commentReq.Header.Set("Content-Type", "application/json")
+	commentResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(commentResp, commentReq)
+	if commentResp.Code != http.StatusOK {
+		t.Fatalf("unexpected notification comment status: %d", commentResp.Code)
+	}
+
+	var detail NotificationDetail
+	if err := json.NewDecoder(commentResp.Body).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode notification detail: %v", err)
+	}
+	if len(detail.Comments) < 2 {
+		t.Fatalf("expected comments to grow, got %+v", detail.Comments)
 	}
 }
 

@@ -49,6 +49,12 @@ type PurchaseReceiptSubmissionResult struct {
 	Note                 string
 }
 
+type Comment struct {
+	ID        string
+	Content   string
+	CreatedAt string
+}
+
 func (c *Client) SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]Item, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {
@@ -414,6 +420,57 @@ func (c *Client) GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSec
 	}
 
 	return mapPurchaseReceiptDraft(doc)
+}
+
+func (c *Client) ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]Comment, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	filtersJSON, _ := json.Marshal([][]interface{}{
+		{"reference_doctype", "=", "Purchase Receipt"},
+		{"reference_name", "=", strings.TrimSpace(name)},
+		{"comment_type", "=", "Comment"},
+	})
+	params := url.Values{}
+	params.Set("fields", `["name","content","creation"]`)
+	params.Set("filters", string(filtersJSON))
+	params.Set("order_by", "creation asc")
+	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
+
+	var payload struct {
+		Data []struct {
+			Name     string `json:"name"`
+			Content  string `json:"content"`
+			Creation string `json:"creation"`
+		} `json:"data"`
+	}
+	endpoint := normalized + "/api/resource/Comment?" + params.Encode()
+	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
+		return nil, err
+	}
+
+	items := make([]Comment, 0, len(payload.Data))
+	for _, row := range payload.Data {
+		items = append(items, Comment{
+			ID:        strings.TrimSpace(row.Name),
+			Content:   strings.TrimSpace(row.Content),
+			CreatedAt: strings.TrimSpace(row.Creation),
+		})
+	}
+	return items, nil
+}
+
+func (c *Client) AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return err
+	}
+	return c.addComment(ctx, normalized, apiKey, apiSecret, "Purchase Receipt", name, content)
 }
 
 func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason string) (PurchaseReceiptSubmissionResult, error) {

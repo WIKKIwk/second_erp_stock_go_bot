@@ -29,6 +29,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/me", s.handleMe)
 	mux.HandleFunc("/v1/mobile/profile", s.handleProfile)
 	mux.HandleFunc("/v1/mobile/profile/avatar", s.handleProfileAvatar)
+	mux.HandleFunc("/v1/mobile/notifications/detail", s.handleNotificationDetail)
+	mux.HandleFunc("/v1/mobile/notifications/comments", s.handleNotificationComment)
 	mux.HandleFunc("/v1/mobile/supplier/history", s.handleSupplierHistory)
 	mux.HandleFunc("/v1/mobile/supplier/items", s.handleSupplierItems)
 	mux.HandleFunc("/v1/mobile/supplier/dispatch", s.handleCreateDispatch)
@@ -201,6 +203,75 @@ func (s *Server) handleProfileAvatar(w http.ResponseWriter, r *http.Request) {
 
 	s.sessions.Update(token, current)
 	writeJSON(w, http.StatusOK, current)
+}
+
+func (s *Server) handleNotificationDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if principal.Role != RoleSupplier && principal.Role != RoleWerka {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	receiptID := strings.TrimSpace(r.URL.Query().Get("receipt_id"))
+	if receiptID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "receipt_id is required"})
+		return
+	}
+
+	detail, err := s.auth.NotificationDetail(r.Context(), principal, receiptID)
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "notification detail failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (s *Server) handleNotificationComment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if principal.Role != RoleSupplier && principal.Role != RoleWerka {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	receiptID := strings.TrimSpace(r.URL.Query().Get("receipt_id"))
+	if receiptID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "receipt_id is required"})
+		return
+	}
+	var req NotificationCommentCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+
+	detail, err := s.auth.AddNotificationComment(r.Context(), principal, receiptID, req.Message)
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "notification comment failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
 }
 
 func (s *Server) handleSupplierHistory(w http.ResponseWriter, r *http.Request) {

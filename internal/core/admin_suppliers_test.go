@@ -96,6 +96,18 @@ func (s *adminSuppliersERPStub) ListSupplierPurchaseReceipts(ctx context.Context
 	return nil, nil
 }
 
+func (s *adminSuppliersERPStub) GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string) (erpnext.PurchaseReceiptDraft, error) {
+	return erpnext.PurchaseReceiptDraft{}, nil
+}
+
+func (s *adminSuppliersERPStub) ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]erpnext.Comment, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) AddPurchaseReceiptComment(ctx context.Context, baseURL, apiKey, apiSecret, name, content string) error {
+	return nil
+}
+
 func (s *adminSuppliersERPStub) CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
 	return erpnext.PurchaseReceiptDraft{}, nil
 }
