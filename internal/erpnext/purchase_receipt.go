@@ -295,34 +295,7 @@ func (c *Client) ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKe
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"docstatus", "=", 0},
 	})
-	params := url.Values{}
-	params.Set("fields", `["name"]`)
-	params.Set("filters", string(filtersJSON))
-	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
-	params.Set("order_by", "modified desc")
-
-	var payload struct {
-		Data []struct {
-			Name string `json:"name"`
-		} `json:"data"`
-	}
-	endpoint := normalized + "/api/resource/Purchase Receipt?" + params.Encode()
-	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
-		return nil, err
-	}
-
-	items := make([]PurchaseReceiptDraft, 0, len(payload.Data))
-	for _, row := range payload.Data {
-		if strings.TrimSpace(row.Name) == "" {
-			continue
-		}
-		doc, err := c.GetPurchaseReceipt(ctx, normalized, apiKey, apiSecret, row.Name)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, doc)
-	}
-	return items, nil
+	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit)
 }
 
 func (c *Client) ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]PurchaseReceiptDraft, error) {
@@ -338,34 +311,7 @@ func (c *Client) ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiK
 		{"supplier", "=", strings.TrimSpace(supplier)},
 		{"supplier_delivery_note", "like", telegramReceiptMarkerPrefix + "%"},
 	})
-	params := url.Values{}
-	params.Set("fields", `["name"]`)
-	params.Set("filters", string(filtersJSON))
-	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
-	params.Set("order_by", "modified desc")
-
-	var payload struct {
-		Data []struct {
-			Name string `json:"name"`
-		} `json:"data"`
-	}
-	endpoint := normalized + "/api/resource/Purchase Receipt?" + params.Encode()
-	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
-		return nil, err
-	}
-
-	items := make([]PurchaseReceiptDraft, 0, len(payload.Data))
-	for _, row := range payload.Data {
-		if strings.TrimSpace(row.Name) == "" {
-			continue
-		}
-		doc, err := c.GetPurchaseReceipt(ctx, normalized, apiKey, apiSecret, row.Name)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, doc)
-	}
-	return items, nil
+	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit)
 }
 
 func (c *Client) ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]PurchaseReceiptDraft, error) {
@@ -380,16 +326,18 @@ func (c *Client) ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiK
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"supplier_delivery_note", "like", telegramReceiptMarkerPrefix + "%"},
 	})
+	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit)
+}
+
+func (c *Client) listPurchaseReceipts(ctx context.Context, normalized, apiKey, apiSecret string, filtersJSON []byte, limit int) ([]PurchaseReceiptDraft, error) {
 	params := url.Values{}
-	params.Set("fields", `["name"]`)
+	params.Set("fields", `["name","supplier","supplier_name","posting_date","supplier_delivery_note","status","docstatus","currency","remarks","items"]`)
 	params.Set("filters", string(filtersJSON))
 	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
 	params.Set("order_by", "modified desc")
 
 	var payload struct {
-		Data []struct {
-			Name string `json:"name"`
-		} `json:"data"`
+		Data []map[string]interface{} `json:"data"`
 	}
 	endpoint := normalized + "/api/resource/Purchase Receipt?" + params.Encode()
 	if err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload); err != nil {
@@ -398,12 +346,16 @@ func (c *Client) ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiK
 
 	items := make([]PurchaseReceiptDraft, 0, len(payload.Data))
 	for _, row := range payload.Data {
-		if strings.TrimSpace(row.Name) == "" {
-			continue
-		}
-		doc, err := c.GetPurchaseReceipt(ctx, normalized, apiKey, apiSecret, row.Name)
+		doc, err := mapPurchaseReceiptDraft(row)
 		if err != nil {
-			return nil, err
+			name := strings.TrimSpace(getStringValue(row["name"]))
+			if name == "" {
+				return nil, err
+			}
+			doc, err = c.GetPurchaseReceipt(ctx, normalized, apiKey, apiSecret, name)
+			if err != nil {
+				return nil, err
+			}
 		}
 		items = append(items, doc)
 	}

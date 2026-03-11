@@ -474,6 +474,34 @@ func TestListPendingPurchaseReceiptsReturnsAllDrafts(t *testing.T) {
 	}
 }
 
+func TestListPendingPurchaseReceiptsUsesInlineDataWhenAvailable(t *testing.T) {
+	detailFetches := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/resource/Purchase Receipt":
+			_, _ = w.Write([]byte(`{"data":[{"name":"MAT-PRE-0001","supplier":"SUP-001","supplier_name":"Abdulloh","posting_date":"2026-03-09","supplier_delivery_note":"","status":"Draft","docstatus":0,"currency":"UZS","remarks":"","items":[{"item_code":"ITEM-001","item_name":"Rice","qty":10,"amount":120,"uom":"Kg","stock_uom":"Kg","warehouse":"Stores - A","conversion_factor":1}]}]}`))
+		case strings.Contains(r.URL.Path, "/api/resource/Purchase%20Receipt/"):
+			detailFetches++
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	items, err := client.ListPendingPurchaseReceipts(context.Background(), server.URL, "key", "secret", 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "MAT-PRE-0001" || items[0].Amount != 120 {
+		t.Fatalf("unexpected drafts: %+v", items)
+	}
+	if detailFetches != 0 {
+		t.Fatalf("expected no detail fetches, got %d", detailFetches)
+	}
+}
+
 func TestBuildSearchQueryVariantsAddsLatinFallbackForCyrillic(t *testing.T) {
 	variants := buildSearchQueryVariants("омбор")
 	if len(variants) != 2 {
