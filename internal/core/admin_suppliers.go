@@ -272,6 +272,31 @@ func (a *ERPAuthenticator) AdminSetSupplierBlocked(ctx context.Context, ref stri
 	return a.AdminSupplierDetail(ctx, item.ID)
 }
 
+func (a *ERPAuthenticator) AdminUpdateSupplierPhone(ctx context.Context, ref, phone string) (AdminSupplierDetail, error) {
+	item, _, err := a.findSupplierForAdmin(ctx, ref)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+
+	cleanPhone := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "").Replace(phone)
+	if !strings.HasPrefix(strings.TrimSpace(cleanPhone), "+") {
+		digitsOnly := cleanPhone
+		if len(digitsOnly) == 9 {
+			cleanPhone = "998" + digitsOnly
+		}
+	}
+	normalizedPhone, err := suplier.NormalizePhone(cleanPhone)
+	if err != nil {
+		return AdminSupplierDetail{}, err
+	}
+
+	details := upsertSupplierPhoneInDetails(item.Details, normalizedPhone)
+	if err := a.erp.UpdateSupplierContact(ctx, a.baseURL, a.apiKey, a.apiSecret, item.ID, normalizedPhone, details); err != nil {
+		return AdminSupplierDetail{}, err
+	}
+	return a.AdminSupplierDetail(ctx, item.ID)
+}
+
 func (a *ERPAuthenticator) AdminRegenerateSupplierCode(ctx context.Context, ref string) (AdminSupplierDetail, error) {
 	item, state, err := a.findSupplierForAdmin(ctx, ref)
 	if err != nil {
@@ -603,6 +628,24 @@ func upsertAccordCodeInDetails(details, code string) string {
 		filtered = append(filtered, trimmed)
 	}
 	filtered = append(filtered, accordCodeLinePrefix+" "+strings.TrimSpace(code))
+	return strings.Join(filtered, "\n")
+}
+
+func upsertSupplierPhoneInDetails(details, phone string) string {
+	lines := strings.Split(strings.ReplaceAll(details, "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "telefon:") || strings.HasPrefix(lower, "phone:") {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	filtered = append([]string{"Telefon: " + strings.TrimSpace(phone)}, filtered...)
 	return strings.Join(filtered, "\n")
 }
 

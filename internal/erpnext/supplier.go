@@ -190,6 +190,18 @@ func (c *Client) UpdateSupplierDetails(ctx context.Context, baseURL, apiKey, api
 	}, nil)
 }
 
+func (c *Client) UpdateSupplierContact(ctx context.Context, baseURL, apiKey, apiSecret, id, phone, details string) error {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return err
+	}
+	endpoint := normalized + "/api/resource/Supplier/" + url.PathEscape(strings.TrimSpace(id))
+	return c.doJSONRequest(ctx, http.MethodPut, endpoint, apiKey, apiSecret, map[string]string{
+		"mobile_no":        strings.TrimSpace(phone),
+		"supplier_details": strings.TrimSpace(details),
+	}, nil)
+}
+
 func (c *Client) UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {

@@ -114,6 +114,18 @@ func (f *fakeERPClient) UpdateSupplierDetails(_ context.Context, _, _, _, id, de
 	return nil
 }
 
+func (f *fakeERPClient) UpdateSupplierContact(_ context.Context, _, _, _, id, phone, details string) error {
+	for index, item := range f.suppliers {
+		if item.ID == id {
+			item.Phone = phone
+			item.Details = details
+			f.suppliers[index] = item
+			return nil
+		}
+	}
+	return nil
+}
+
 func (f *fakeERPClient) ListPendingPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
 	return nil, nil
 }
@@ -453,6 +465,19 @@ func TestServerAdminSupplierManagementFlow(t *testing.T) {
 		t.Fatalf("unexpected item update code: %d", itemsResp.Code)
 	}
 
+	phoneReq := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/mobile/admin/suppliers/phone?ref=SUP-001",
+		bytes.NewReader([]byte(`{"phone":"+998909876543"}`)),
+	)
+	phoneReq.Header.Set("Authorization", "Bearer "+token)
+	phoneReq.Header.Set("Content-Type", "application/json")
+	phoneResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(phoneResp, phoneReq)
+	if phoneResp.Code != http.StatusOK {
+		t.Fatalf("unexpected phone update code: %d", phoneResp.Code)
+	}
+
 	codeReq := httptest.NewRequest(http.MethodPost, "/v1/mobile/admin/suppliers/code/regenerate?ref=SUP-001", nil)
 	codeReq.Header.Set("Authorization", "Bearer "+token)
 	codeResp := httptest.NewRecorder()
@@ -475,6 +500,9 @@ func TestServerAdminSupplierManagementFlow(t *testing.T) {
 	}
 	if !detail.Blocked {
 		t.Fatalf("expected supplier to be blocked: %+v", detail)
+	}
+	if detail.Phone != "+998909876543" {
+		t.Fatalf("expected updated phone, got %+v", detail)
 	}
 	if len(detail.AssignedItems) != 2 {
 		t.Fatalf("expected 2 assigned items, got %+v", detail.AssignedItems)

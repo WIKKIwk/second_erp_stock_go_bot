@@ -40,6 +40,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/admin/suppliers/detail", s.handleAdminSupplierDetail)
 	mux.HandleFunc("/v1/mobile/admin/suppliers/inactive", s.handleAdminInactiveSuppliers)
 	mux.HandleFunc("/v1/mobile/admin/suppliers/status", s.handleAdminSupplierStatus)
+	mux.HandleFunc("/v1/mobile/admin/suppliers/phone", s.handleAdminSupplierPhone)
 	mux.HandleFunc("/v1/mobile/admin/suppliers/items", s.handleAdminSupplierItems)
 	mux.HandleFunc("/v1/mobile/admin/suppliers/items/assigned", s.handleAdminSupplierAssignedItems)
 	mux.HandleFunc("/v1/mobile/admin/suppliers/items/add", s.handleAdminSupplierItemAdd)
@@ -485,6 +486,43 @@ func (s *Server) handleAdminSupplierStatus(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "supplier status failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (s *Server) handleAdminSupplierPhone(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if err := requireRole(principal, RoleAdmin); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	if r.Method != http.MethodPut {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	ref := strings.TrimSpace(r.URL.Query().Get("ref"))
+	if ref == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ref is required"})
+		return
+	}
+	var req AdminSupplierPhoneUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+
+	detail, err := s.auth.AdminUpdateSupplierPhone(r.Context(), ref, req.Phone)
+	if err != nil {
+		if errors.Is(err, ErrAdminSupplierNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "supplier not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "supplier phone update failed"})
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)

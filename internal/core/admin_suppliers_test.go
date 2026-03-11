@@ -14,6 +14,7 @@ type adminSuppliersERPStub struct {
 	listAssignedSupplierItems func(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.Item, error)
 	getItemsByCodes           func(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]erpnext.Item, error)
 	searchWarehouses          func(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
+	updateSupplierContact     func(ctx context.Context, baseURL, apiKey, apiSecret, id, phone, details string) error
 }
 
 func (s *adminSuppliersERPStub) SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error) {
@@ -32,6 +33,13 @@ func (s *adminSuppliersERPStub) GetSupplier(ctx context.Context, baseURL, apiKey
 }
 
 func (s *adminSuppliersERPStub) UpdateSupplierDetails(ctx context.Context, baseURL, apiKey, apiSecret, id, details string) error {
+	return nil
+}
+
+func (s *adminSuppliersERPStub) UpdateSupplierContact(ctx context.Context, baseURL, apiKey, apiSecret, id, phone, details string) error {
+	if s.updateSupplierContact != nil {
+		return s.updateSupplierContact(ctx, baseURL, apiKey, apiSecret, id, phone, details)
+	}
 	return nil
 }
 
@@ -180,5 +188,51 @@ func TestAdminAssignedSupplierItemsReturnsEmptyWhenPermissionDeniedWithoutCache(
 	}
 	if len(items) != 0 {
 		t.Fatalf("expected no items, got %d", len(items))
+	}
+}
+
+func TestAdminUpdateSupplierPhoneNormalizesAndPersists(t *testing.T) {
+	var updatedPhone string
+	var updatedDetails string
+
+	stub := &adminSuppliersERPStub{
+		getSupplier: func(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error) {
+			return erpnext.Supplier{
+				ID:      id,
+				Name:    "Supplier",
+				Details: "Accord Code: 10ABCDEF1234",
+			}, nil
+		},
+		updateSupplierContact: func(ctx context.Context, baseURL, apiKey, apiSecret, id, phone, details string) error {
+			updatedPhone = phone
+			updatedDetails = details
+			return nil
+		},
+	}
+
+	auth := NewERPAuthenticator(
+		stub,
+		"http://erp.test",
+		"key",
+		"secret",
+		"Stores - A",
+		"10",
+		"20",
+		"",
+		"",
+		"",
+		nil,
+		nil,
+	)
+
+	_, err := auth.AdminUpdateSupplierPhone(context.Background(), "SUP-001", "90 123 45 67")
+	if err != nil {
+		t.Fatalf("AdminUpdateSupplierPhone() error = %v", err)
+	}
+	if updatedPhone != "+998901234567" {
+		t.Fatalf("expected normalized phone, got %q", updatedPhone)
+	}
+	if updatedDetails != "Telefon: +998901234567\nAccord Code: 10ABCDEF1234" {
+		t.Fatalf("unexpected details payload: %q", updatedDetails)
 	}
 }

@@ -119,6 +119,10 @@ type AdminSupplierStatusUpdateRequest struct {
 	Blocked bool `json:"blocked"`
 }
 
+type AdminSupplierPhoneUpdateRequest struct {
+	Phone string `json:"phone"`
+}
+
 type AdminSupplierItemsUpdateRequest struct {
 	ItemCodes []string `json:"item_codes"`
 }
