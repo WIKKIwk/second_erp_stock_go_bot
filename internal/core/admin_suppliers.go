@@ -97,11 +97,7 @@ func (a *ERPAuthenticator) AdminSupplierDetail(ctx context.Context, ref string) 
 		return AdminSupplierDetail{}, err
 	}
 
-	assignedItems, err := a.erp.ListAssignedSupplierItems(ctx, a.baseURL, a.apiKey, a.apiSecret, item.ID, 200)
-	if err != nil {
-		return AdminSupplierDetail{}, err
-	}
-	mappedAssignedItems, err := a.mapSupplierItems(ctx, assignedItems)
+	mappedAssignedItems, err := a.adminAssignedItems(ctx, item.ID, state, 200)
 	if err != nil {
 		return AdminSupplierDetail{}, err
 	}
@@ -137,11 +133,11 @@ func (a *ERPAuthenticator) AdminAssignedSupplierItems(ctx context.Context, ref s
 	if err != nil {
 		return nil, err
 	}
-	items, err := a.erp.ListAssignedSupplierItems(ctx, a.baseURL, a.apiKey, a.apiSecret, item.ID, limit)
+	state, err := a.adminSupplierState(item.ID)
 	if err != nil {
 		return nil, err
 	}
-	return a.mapSupplierItems(ctx, items)
+	return a.adminAssignedItems(ctx, item.ID, state, limit)
 }
 
 func (a *ERPAuthenticator) AdminAssignSupplierItem(ctx context.Context, ref, itemCode string) (AdminSupplierDetail, error) {
@@ -494,6 +490,34 @@ func (a *ERPAuthenticator) findSupplierForAdminWithRemovedOption(ctx context.Con
 		return erpnext.Supplier{}, AdminSupplierState{}, ErrAdminSupplierNotFound
 	}
 	return doc, state, nil
+}
+
+func (a *ERPAuthenticator) adminAssignedItems(ctx context.Context, supplierRef string, state AdminSupplierState, limit int) ([]SupplierItem, error) {
+	items, err := a.erp.ListAssignedSupplierItems(ctx, a.baseURL, a.apiKey, a.apiSecret, supplierRef, limit)
+	if err == nil {
+		return a.mapSupplierItems(ctx, items)
+	}
+	if !isItemSupplierPermissionError(err) {
+		return nil, err
+	}
+
+	if len(state.AssignedItemCodes) == 0 {
+		return []SupplierItem{}, nil
+	}
+
+	fallbackItems, fallbackErr := a.erp.GetItemsByCodes(ctx, a.baseURL, a.apiKey, a.apiSecret, state.AssignedItemCodes)
+	if fallbackErr != nil {
+		return nil, fallbackErr
+	}
+	return a.mapSupplierItems(ctx, fallbackItems)
+}
+
+func isItemSupplierPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "permissionerror") || strings.Contains(message, "status 403:")
 }
 
 func (a *ERPAuthenticator) bumpCodeRegenState(state AdminSupplierState, now time.Time) (AdminSupplierState, error) {

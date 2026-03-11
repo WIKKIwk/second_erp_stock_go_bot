@@ -1,0 +1,184 @@
+package core
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+
+	"erpnext_stock_telegram/internal/erpnext"
+)
+
+type adminSuppliersERPStub struct {
+	getSupplier               func(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error)
+	listAssignedSupplierItems func(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.Item, error)
+	getItemsByCodes           func(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]erpnext.Item, error)
+	searchWarehouses          func(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error)
+}
+
+func (s *adminSuppliersERPStub) SearchItems(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Item, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) GetSupplier(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error) {
+	if s.getSupplier != nil {
+		return s.getSupplier(ctx, baseURL, apiKey, apiSecret, id)
+	}
+	return erpnext.Supplier{}, nil
+}
+
+func (s *adminSuppliersERPStub) UpdateSupplierDetails(ctx context.Context, baseURL, apiKey, apiSecret, id, details string) error {
+	return nil
+}
+
+func (s *adminSuppliersERPStub) GetItemsByCodes(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]erpnext.Item, error) {
+	if s.getItemsByCodes != nil {
+		return s.getItemsByCodes(ctx, baseURL, apiKey, apiSecret, itemCodes)
+	}
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) CreateItem(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateItemInput) (erpnext.Item, error) {
+	return erpnext.Item{}, nil
+}
+
+func (s *adminSuppliersERPStub) EnsureSupplier(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreateSupplierInput) (erpnext.Supplier, error) {
+	return erpnext.Supplier{}, nil
+}
+
+func (s *adminSuppliersERPStub) SearchWarehouses(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error) {
+	if s.searchWarehouses != nil {
+		return s.searchWarehouses(ctx, baseURL, apiKey, apiSecret, query, limit)
+	}
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]erpnext.Item, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) ListAssignedSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.Item, error) {
+	if s.listAssignedSupplierItems != nil {
+		return s.listAssignedSupplierItems(ctx, baseURL, apiKey, apiSecret, supplier, limit)
+	}
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) AssignSupplierToItem(ctx context.Context, baseURL, apiKey, apiSecret, itemCode, supplier string) error {
+	return nil
+}
+
+func (s *adminSuppliersERPStub) RemoveSupplierFromItem(ctx context.Context, baseURL, apiKey, apiSecret, itemCode, supplier string) error {
+	return nil
+}
+
+func (s *adminSuppliersERPStub) ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
+	return erpnext.PurchaseReceiptDraft{}, nil
+}
+
+func (s *adminSuppliersERPStub) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty float64) (erpnext.PurchaseReceiptSubmissionResult, error) {
+	return erpnext.PurchaseReceiptSubmissionResult{}, nil
+}
+
+func (s *adminSuppliersERPStub) UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error) {
+	return "", nil
+}
+
+func TestAdminSupplierDetailFallsBackWhenItemSupplierPermissionDenied(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewAdminSupplierStore(filepath.Join(tempDir, "admin-suppliers.json"))
+	if err := store.Put("SUP-001", AdminSupplierState{
+		AssignmentsConfigured: true,
+		AssignedItemCodes:     []string{"ITEM-001"},
+	}); err != nil {
+		t.Fatalf("seed admin supplier state: %v", err)
+	}
+
+	stub := &adminSuppliersERPStub{
+		getSupplier: func(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error) {
+			return erpnext.Supplier{ID: id, Name: "Supplier", Phone: "+998900000001"}, nil
+		},
+		listAssignedSupplierItems: func(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.Item, error) {
+			return nil, errors.New(`status 403: {"exception":"frappe.exceptions.PermissionError","exc":"check_parent_permission","route":"Item%20Supplier"}`)
+		},
+		getItemsByCodes: func(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]erpnext.Item, error) {
+			return []erpnext.Item{{Code: "ITEM-001", Name: "Bolt", UOM: "Nos"}}, nil
+		},
+	}
+
+	auth := NewERPAuthenticator(
+		stub,
+		"http://erp.test",
+		"key",
+		"secret",
+		"Stores - A",
+		"10",
+		"20",
+		"",
+		"",
+		"",
+		nil,
+		store,
+	)
+
+	detail, err := auth.AdminSupplierDetail(context.Background(), "SUP-001")
+	if err != nil {
+		t.Fatalf("AdminSupplierDetail() error = %v", err)
+	}
+	if len(detail.AssignedItems) != 1 {
+		t.Fatalf("expected 1 assigned item, got %d", len(detail.AssignedItems))
+	}
+	if detail.AssignedItems[0].Code != "ITEM-001" {
+		t.Fatalf("expected ITEM-001, got %q", detail.AssignedItems[0].Code)
+	}
+}
+
+func TestAdminAssignedSupplierItemsReturnsEmptyWhenPermissionDeniedWithoutCache(t *testing.T) {
+	stub := &adminSuppliersERPStub{
+		getSupplier: func(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error) {
+			return erpnext.Supplier{ID: id, Name: "Supplier"}, nil
+		},
+		listAssignedSupplierItems: func(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.Item, error) {
+			return nil, errors.New(`status 403: {"exception":"frappe.exceptions.PermissionError","exc":"check_parent_permission","route":"Item%20Supplier"}`)
+		},
+	}
+
+	auth := NewERPAuthenticator(
+		stub,
+		"http://erp.test",
+		"key",
+		"secret",
+		"Stores - A",
+		"10",
+		"20",
+		"",
+		"",
+		"",
+		nil,
+		nil,
+	)
+
+	items, err := auth.AdminAssignedSupplierItems(context.Background(), "SUP-001", 20)
+	if err != nil {
+		t.Fatalf("AdminAssignedSupplierItems() error = %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected no items, got %d", len(items))
+	}
+}

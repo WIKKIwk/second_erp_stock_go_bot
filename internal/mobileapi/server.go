@@ -420,6 +420,7 @@ func (s *Server) handleAdminSupplierDetail(w http.ResponseWriter, r *http.Reques
 	}
 	detail, err := s.auth.AdminSupplierDetail(r.Context(), ref)
 	if err != nil {
+		log.Printf("admin supplier detail failed for %s: %v", ref, err)
 		if errors.Is(err, ErrAdminSupplierNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "supplier not found"})
 			return
