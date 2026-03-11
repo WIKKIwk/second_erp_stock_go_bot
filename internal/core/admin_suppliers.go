@@ -28,7 +28,11 @@ var (
 )
 
 func (a *ERPAuthenticator) AdminSupplierSummary(ctx context.Context, limit int) (AdminSupplierSummary, error) {
-	items, err := a.adminSuppliersWithOptions(ctx, limit, true)
+	items, err := a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, "", limit)
+	if err != nil {
+		return AdminSupplierSummary{}, err
+	}
+	states, err := a.adminSupplierStates()
 	if err != nil {
 		return AdminSupplierSummary{}, err
 	}
@@ -37,7 +41,8 @@ func (a *ERPAuthenticator) AdminSupplierSummary(ctx context.Context, limit int) 
 		TotalSuppliers: len(items),
 	}
 	for _, item := range items {
-		if item.Blocked {
+		state := states[strings.TrimSpace(item.ID)]
+		if state.Blocked || state.Removed {
 			summary.BlockedSuppliers++
 			continue
 		}
@@ -51,17 +56,26 @@ func (a *ERPAuthenticator) AdminSuppliers(ctx context.Context, limit int) ([]Adm
 }
 
 func (a *ERPAuthenticator) AdminInactiveSuppliers(ctx context.Context, limit int) ([]AdminSupplier, error) {
-	items, err := a.adminSuppliersWithOptions(ctx, limit, true)
+	items, err := a.erp.SearchSuppliers(ctx, a.baseURL, a.apiKey, a.apiSecret, "", limit)
+	if err != nil {
+		return nil, err
+	}
+	states, err := a.adminSupplierStates()
 	if err != nil {
 		return nil, err
 	}
 
 	result := make([]AdminSupplier, 0, len(items))
 	for _, item := range items {
-		if !item.Blocked && !item.Removed {
+		state := states[strings.TrimSpace(item.ID)]
+		if !state.Blocked && !state.Removed {
 			continue
 		}
-		result = append(result, item)
+		adminItem, err := a.buildAdminSupplier(item, state)
+		if err != nil {
+			continue
+		}
+		result = append(result, adminItem)
 	}
 	return result, nil
 }

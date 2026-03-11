@@ -10,6 +10,7 @@ import (
 )
 
 type adminSuppliersERPStub struct {
+	searchSuppliers           func(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error)
 	getSupplier               func(ctx context.Context, baseURL, apiKey, apiSecret, id string) (erpnext.Supplier, error)
 	listAssignedSupplierItems func(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.Item, error)
 	getItemsByCodes           func(ctx context.Context, baseURL, apiKey, apiSecret string, itemCodes []string) ([]erpnext.Item, error)
@@ -22,6 +23,9 @@ func (s *adminSuppliersERPStub) SearchItems(ctx context.Context, baseURL, apiKey
 }
 
 func (s *adminSuppliersERPStub) SearchSuppliers(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error) {
+	if s.searchSuppliers != nil {
+		return s.searchSuppliers(ctx, baseURL, apiKey, apiSecret, query, limit)
+	}
 	return nil, nil
 }
 
@@ -258,5 +262,49 @@ func TestAdminUpdateSupplierPhoneNormalizesAndPersists(t *testing.T) {
 	}
 	if updatedDetails != "Telefon: +998901234567\nAccord Code: 10ABCDEF1234" {
 		t.Fatalf("unexpected details payload: %q", updatedDetails)
+	}
+}
+
+func TestAdminSupplierSummaryCountsRemovedAsBlockedBucket(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewAdminSupplierStore(filepath.Join(tempDir, "admin-suppliers.json"))
+	if err := store.Put("SUP-002", AdminSupplierState{Blocked: true}); err != nil {
+		t.Fatalf("seed blocked state: %v", err)
+	}
+	if err := store.Put("SUP-003", AdminSupplierState{Removed: true}); err != nil {
+		t.Fatalf("seed removed state: %v", err)
+	}
+
+	stub := &adminSuppliersERPStub{
+		searchSuppliers: func(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Supplier, error) {
+			return []erpnext.Supplier{
+				{ID: "SUP-001", Name: "Active"},
+				{ID: "SUP-002", Name: "Blocked"},
+				{ID: "SUP-003", Name: "Removed"},
+			}, nil
+		},
+	}
+
+	auth := NewERPAuthenticator(
+		stub,
+		"http://erp.test",
+		"key",
+		"secret",
+		"Stores - A",
+		"10",
+		"20",
+		"",
+		"",
+		"",
+		nil,
+		store,
+	)
+
+	summary, err := auth.AdminSupplierSummary(context.Background(), 20)
+	if err != nil {
+		t.Fatalf("AdminSupplierSummary() error = %v", err)
+	}
+	if summary.TotalSuppliers != 3 || summary.ActiveSuppliers != 1 || summary.BlockedSuppliers != 2 {
+		t.Fatalf("unexpected summary: %+v", summary)
 	}
 }
