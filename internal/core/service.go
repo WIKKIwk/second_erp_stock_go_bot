@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"html"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +21,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrInvalidRole        = errors.New("invalid role")
 	ErrUnauthorized       = errors.New("unauthorized")
+	htmlTagPattern        = regexp.MustCompile(`<[^>]+>`)
 )
 
 type ERPClient interface {
@@ -685,7 +688,7 @@ func formatNotificationComment(principal Principal, message string) string {
 }
 
 func parseNotificationComment(content string) (string, string) {
-	trimmed := strings.TrimSpace(content)
+	trimmed := sanitizeNotificationComment(content)
 	if trimmed == "" {
 		return "", ""
 	}
@@ -698,6 +701,28 @@ func parseNotificationComment(content string) (string, string) {
 		}
 	}
 	return "Tizim", trimmed
+}
+
+func sanitizeNotificationComment(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return ""
+	}
+	replaced := strings.ReplaceAll(trimmed, "<br>", "\n")
+	replaced = strings.ReplaceAll(replaced, "<br/>", "\n")
+	replaced = strings.ReplaceAll(replaced, "<br />", "\n")
+	replaced = htmlTagPattern.ReplaceAllString(replaced, "")
+	replaced = html.UnescapeString(replaced)
+	lines := strings.Split(strings.ReplaceAll(replaced, "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		cleaned := strings.TrimSpace(line)
+		if cleaned == "" {
+			continue
+		}
+		filtered = append(filtered, cleaned)
+	}
+	return strings.Join(filtered, "\n")
 }
 
 func dispatchStatusFromQuantities(sentQty, acceptedQty float64) string {
