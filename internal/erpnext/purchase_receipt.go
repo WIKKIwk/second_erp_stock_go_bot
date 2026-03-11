@@ -35,6 +35,7 @@ type PurchaseReceiptDraft struct {
 	Qty                  float64
 	UOM                  string
 	Warehouse            string
+	Remarks              string
 }
 
 type PurchaseReceiptSubmissionResult struct {
@@ -45,6 +46,7 @@ type PurchaseReceiptSubmissionResult struct {
 	SentQty              float64
 	AcceptedQty          float64
 	SupplierDeliveryNote string
+	Note                 string
 }
 
 func (c *Client) SearchSupplierItems(ctx context.Context, baseURL, apiKey, apiSecret, supplier, query string, limit int) ([]Item, error) {
@@ -414,7 +416,7 @@ func (c *Client) GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSec
 	return mapPurchaseReceiptDraft(doc)
 }
 
-func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty float64) (PurchaseReceiptSubmissionResult, error) {
+func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason string) (PurchaseReceiptSubmissionResult, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {
 		return PurchaseReceiptSubmissionResult{}, err
@@ -434,6 +436,10 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	}
 	if acceptedQty > draft.Qty {
 		return PurchaseReceiptSubmissionResult{}, fmt.Errorf("accepted qty cannot exceed sent qty")
+	}
+	decisionNote, err := buildAccordDecisionNote(draft, acceptedQty, returnedQty, returnReason)
+	if err != nil {
+		return PurchaseReceiptSubmissionResult{}, err
 	}
 
 	items, ok := doc["items"].([]interface{})
@@ -461,6 +467,9 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	if _, ok := firstItem["rate"]; !ok {
 		firstItem["rate"] = 0
 	}
+	if strings.TrimSpace(decisionNote) != "" {
+		doc["remarks"] = upsertAccordDecisionInRemarks(getStringValue(doc["remarks"]), decisionNote)
+	}
 
 	updateEndpoint := normalized + "/api/resource/Purchase%20Receipt/" + url.PathEscape(name)
 	if err := c.doJSONRequest(ctx, http.MethodPut, updateEndpoint, apiKey, apiSecret, doc, nil); err != nil {
@@ -469,6 +478,9 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 
 	if err := c.submitDoc(ctx, normalized, apiKey, apiSecret, "Purchase Receipt", name); err != nil {
 		return PurchaseReceiptSubmissionResult{}, err
+	}
+	if strings.TrimSpace(decisionNote) != "" {
+		_ = c.addComment(ctx, normalized, apiKey, apiSecret, "Purchase Receipt", name, decisionNote)
 	}
 
 	return PurchaseReceiptSubmissionResult{
@@ -479,7 +491,21 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 		SentQty:              draft.Qty,
 		AcceptedQty:          acceptedQty,
 		SupplierDeliveryNote: draft.SupplierDeliveryNote,
+		Note:                 ExtractAccordDecisionNote(decisionNote),
 	}, nil
+}
+
+func (c *Client) addComment(ctx context.Context, normalized, apiKey, apiSecret, doctype, name, content string) error {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	endpoint := normalized + "/api/resource/Comment"
+	return c.doJSONRequest(ctx, http.MethodPost, endpoint, apiKey, apiSecret, map[string]string{
+		"comment_type":      "Comment",
+		"reference_doctype": strings.TrimSpace(doctype),
+		"reference_name":    strings.TrimSpace(name),
+		"content":           strings.TrimSpace(content),
+	}, nil)
 }
 
 func (c *Client) resolveSupplierLink(ctx context.Context, normalized, apiKey, apiSecret, supplier string) (string, error) {
@@ -722,7 +748,81 @@ func mapPurchaseReceiptDraft(doc map[string]interface{}) (PurchaseReceiptDraft, 
 		Qty:                  getFloatValue(firstItem["qty"]),
 		UOM:                  uom,
 		Warehouse:            getStringValue(firstItem["warehouse"]),
+		Remarks:              getStringValue(doc["remarks"]),
 	}, nil
+}
+
+const (
+	accordAcceptedLinePrefix = "Accord Qabul:"
+	accordReturnedLinePrefix = "Accord Qaytarildi:"
+	accordReasonLinePrefix   = "Accord Sabab:"
+)
+
+func buildAccordDecisionNote(draft PurchaseReceiptDraft, acceptedQty, returnedQty float64, returnReason string) (string, error) {
+	impliedReturnedQty := draft.Qty - acceptedQty
+	if impliedReturnedQty < 0 {
+		impliedReturnedQty = 0
+	}
+	if impliedReturnedQty <= 0 {
+		return "", nil
+	}
+
+	if returnedQty < 0 {
+		return "", fmt.Errorf("returned qty cannot be negative")
+	}
+	if returnedQty == 0 {
+		returnedQty = impliedReturnedQty
+	}
+	if returnedQty-impliedReturnedQty > 0.0001 {
+		return "", fmt.Errorf("returned qty cannot exceed sent minus accepted qty")
+	}
+
+	lines := []string{
+		fmt.Sprintf("%s %.4f %s", accordAcceptedLinePrefix, acceptedQty, draft.UOM),
+		fmt.Sprintf("%s %.4f %s", accordReturnedLinePrefix, returnedQty, draft.UOM),
+	}
+	if strings.TrimSpace(returnReason) != "" {
+		lines = append(lines, accordReasonLinePrefix+" "+strings.TrimSpace(returnReason))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func upsertAccordDecisionInRemarks(existing, decision string) string {
+	lines := strings.Split(strings.ReplaceAll(existing, "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines)+3)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, accordAcceptedLinePrefix) ||
+			strings.HasPrefix(trimmed, accordReturnedLinePrefix) ||
+			strings.HasPrefix(trimmed, accordReasonLinePrefix) {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	if strings.TrimSpace(decision) != "" {
+		filtered = append(filtered, strings.Split(strings.TrimSpace(decision), "\n")...)
+	}
+	return strings.Join(filtered, "\n")
+}
+
+func ExtractAccordDecisionNote(remarks string) string {
+	lines := strings.Split(strings.ReplaceAll(remarks, "\r\n", "\n"), "\n")
+	result := make([]string, 0, 3)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, accordAcceptedLinePrefix):
+			result = append(result, "Qabul: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordAcceptedLinePrefix)))
+		case strings.HasPrefix(trimmed, accordReturnedLinePrefix):
+			result = append(result, "Qaytarildi: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordReturnedLinePrefix)))
+		case strings.HasPrefix(trimmed, accordReasonLinePrefix):
+			result = append(result, "Sabab: "+strings.TrimSpace(strings.TrimPrefix(trimmed, accordReasonLinePrefix)))
+		}
+	}
+	return strings.Join(result, "\n")
 }
 
 func buildTelegramReceiptMarker(phone string, qty float64, now time.Time) string {

@@ -41,6 +41,7 @@ type DispatchRecord struct {
 	UOM          string  `json:"uom"`
 	SentQty      float64 `json:"sent_qty"`
 	AcceptedQty  float64 `json:"accepted_qty"`
+	Note         string  `json:"note,omitempty"`
 	Status       string  `json:"status"`
 	CreatedLabel string  `json:"created_label"`
 }
@@ -58,8 +59,10 @@ type CreateDispatchRequest struct {
 }
 
 type ConfirmReceiptRequest struct {
-	ReceiptID   string  `json:"receipt_id"`
-	AcceptedQty float64 `json:"accepted_qty"`
+	ReceiptID    string  `json:"receipt_id"`
+	AcceptedQty  float64 `json:"accepted_qty"`
+	ReturnedQty  float64 `json:"returned_qty"`
+	ReturnReason string  `json:"return_reason"`
 }
 
 type ProfileUpdateRequest struct {

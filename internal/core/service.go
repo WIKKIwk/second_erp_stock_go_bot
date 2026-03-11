@@ -39,7 +39,7 @@ type ERPClient interface {
 	ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
-	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty float64) (erpnext.PurchaseReceiptSubmissionResult, error)
+	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason string) (erpnext.PurchaseReceiptSubmissionResult, error)
 	UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error)
 }
 
@@ -290,6 +290,7 @@ func (a *ERPAuthenticator) SupplierHistory(ctx context.Context, principal Princi
 			UOM:          item.UOM,
 			SentQty:      sentQty,
 			AcceptedQty:  acceptedQty,
+			Note:         erpnext.ExtractAccordDecisionNote(item.Remarks),
 			Status:       status,
 			CreatedLabel: item.PostingDate,
 		})
@@ -345,6 +346,7 @@ func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]Dispa
 			UOM:          item.UOM,
 			SentQty:      sentQty,
 			AcceptedQty:  acceptedQty,
+			Note:         erpnext.ExtractAccordDecisionNote(item.Remarks),
 			Status:       status,
 			CreatedLabel: item.PostingDate,
 		})
@@ -409,8 +411,17 @@ func (a *ERPAuthenticator) resolveWarehouse(ctx context.Context) (string, error)
 	return strings.TrimSpace(items[0].Name), nil
 }
 
-func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string, acceptedQty float64) (DispatchRecord, error) {
-	result, err := a.erp.ConfirmAndSubmitPurchaseReceipt(ctx, a.baseURL, a.apiKey, a.apiSecret, strings.TrimSpace(receiptID), acceptedQty)
+func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string, acceptedQty, returnedQty float64, returnReason string) (DispatchRecord, error) {
+	result, err := a.erp.ConfirmAndSubmitPurchaseReceipt(
+		ctx,
+		a.baseURL,
+		a.apiKey,
+		a.apiSecret,
+		strings.TrimSpace(receiptID),
+		acceptedQty,
+		returnedQty,
+		returnReason,
+	)
 	if err != nil {
 		return DispatchRecord{}, err
 	}
@@ -423,6 +434,7 @@ func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string,
 		UOM:          result.UOM,
 		SentQty:      result.SentQty,
 		AcceptedQty:  result.AcceptedQty,
+		Note:         result.Note,
 		Status:       dispatchStatusFromQuantities(result.SentQty, result.AcceptedQty),
 		CreatedLabel: result.Name,
 	}, nil

@@ -91,7 +91,7 @@ func (f *fakeERP) GetPurchaseReceipt(_ context.Context, _, _, _, _ string) (erpn
 	return f.receipt, nil
 }
 
-func (f *fakeERP) ConfirmAndSubmitPurchaseReceipt(_ context.Context, _, _, _, name string, qty float64) (erpnext.PurchaseReceiptSubmissionResult, error) {
+func (f *fakeERP) ConfirmAndSubmitPurchaseReceipt(_ context.Context, _, _, _, name string, qty, _ float64, _ string) (erpnext.PurchaseReceiptSubmissionResult, error) {
 	f.confirmName = name
 	f.confirmQty = qty
 	if f.submitErr != nil {

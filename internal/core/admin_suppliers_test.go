@@ -100,7 +100,7 @@ func (s *adminSuppliersERPStub) CreateDraftPurchaseReceipt(ctx context.Context, 
 	return erpnext.PurchaseReceiptDraft{}, nil
 }
 
-func (s *adminSuppliersERPStub) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty float64) (erpnext.PurchaseReceiptSubmissionResult, error) {
+func (s *adminSuppliersERPStub) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason string) (erpnext.PurchaseReceiptSubmissionResult, error) {
 	return erpnext.PurchaseReceiptSubmissionResult{}, nil
 }
 

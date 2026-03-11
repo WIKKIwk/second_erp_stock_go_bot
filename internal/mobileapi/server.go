@@ -325,7 +325,13 @@ func (s *Server) handleWerkaConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := s.auth.ConfirmReceipt(r.Context(), req.ReceiptID, req.AcceptedQty)
+	record, err := s.auth.ConfirmReceipt(
+		r.Context(),
+		req.ReceiptID,
+		req.AcceptedQty,
+		req.ReturnedQty,
+		req.ReturnReason,
+	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "receipt confirm failed"})
 		return
