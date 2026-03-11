@@ -229,6 +229,40 @@ func (c *Client) UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSe
 	return fileURL, nil
 }
 
+func (c *Client) DownloadFile(ctx context.Context, baseURL, apiKey, apiSecret, fileURL string) (string, []byte, error) {
+	normalized, err := normalizeBaseURL(baseURL)
+	if err != nil {
+		return "", nil, err
+	}
+	trimmed := strings.TrimSpace(fileURL)
+	if trimmed == "" {
+		return "", nil, fmt.Errorf("file url is required")
+	}
+	endpoint := trimmed
+	if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
+		endpoint = strings.TrimRight(normalized, "/") + trimmed
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("token %s:%s", apiKey, apiSecret))
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil, err
+	}
+	return resp.Header.Get("Content-Type"), body, nil
+}
+
 func (c *Client) uploadFile(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error) {
 	if strings.TrimSpace(filename) == "" {
 		filename = "avatar.png"

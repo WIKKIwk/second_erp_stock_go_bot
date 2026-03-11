@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -36,6 +37,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/me", s.handleMe)
 	mux.HandleFunc("/v1/mobile/profile", s.handleProfile)
 	mux.HandleFunc("/v1/mobile/profile/avatar", s.handleProfileAvatar)
+	mux.HandleFunc("/v1/mobile/profile/avatar/view", s.handleProfileAvatarView)
 	mux.HandleFunc("/v1/mobile/push/token", s.handlePushToken)
 	mux.HandleFunc("/v1/mobile/notifications/detail", s.handleNotificationDetail)
 	mux.HandleFunc("/v1/mobile/notifications/comments", s.handleNotificationComment)
@@ -67,6 +69,25 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func avatarProxyURL(r *http.Request, principal Principal, token string) string {
+	if principal.Role != RoleSupplier || strings.TrimSpace(principal.Ref) == "" {
+		return principal.AvatarURL
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s/v1/mobile/profile/avatar/view?token=%s", scheme, r.Host, url.QueryEscape(strings.TrimSpace(token)))
+}
+
+func withAvatarProxy(r *http.Request, principal Principal, token string) Principal {
+	if strings.TrimSpace(principal.AvatarURL) == "" {
+		return principal
+	}
+	principal.AvatarURL = avatarProxyURL(r, principal, token)
+	return principal
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +124,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, LoginResponse{
 		Token:   token,
-		Profile: principal,
+		Profile: withAvatarProxy(r, principal, token),
 	})
 }
 
@@ -116,7 +137,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		principal = current
 		s.sessions.Update(token, principal)
 	}
-	writeJSON(w, http.StatusOK, principal)
+	writeJSON(w, http.StatusOK, withAvatarProxy(r, principal, token))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +169,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.sessions.Update(token, current)
-		writeJSON(w, http.StatusOK, current)
+		writeJSON(w, http.StatusOK, withAvatarProxy(r, current, token))
 	case http.MethodPut:
 		var req ProfileUpdateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -161,7 +182,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.sessions.Update(token, current)
-		writeJSON(w, http.StatusOK, current)
+		writeJSON(w, http.StatusOK, withAvatarProxy(r, current, token))
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
@@ -210,7 +231,56 @@ func (s *Server) handleProfileAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.sessions.Update(token, current)
-	writeJSON(w, http.StatusOK, current)
+	writeJSON(w, http.StatusOK, withAvatarProxy(r, current, token))
+}
+
+func (s *Server) handleProfileAvatarView(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	var (
+		principal Principal
+		ok        bool
+	)
+	if token != "" {
+		principal, ok = s.sessions.Get(token)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+	} else {
+		principal, ok = s.authorize(w, r)
+		if !ok {
+			return
+		}
+	}
+	if principal.Role != RoleSupplier {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	current, err := s.auth.Profile(r.Context(), principal)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "avatar fetch failed"})
+		return
+	}
+	if strings.TrimSpace(current.AvatarURL) == "" {
+		http.NotFound(w, r)
+		return
+	}
+	contentType, body, err := s.auth.DownloadFile(
+		r.Context(),
+		s.auth.BaseURL(),
+		s.auth.APIKey(),
+		s.auth.APISecret(),
+		current.AvatarURL,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "avatar fetch failed"})
+		return
+	}
+	if strings.TrimSpace(contentType) != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 func (s *Server) handleNotificationDetail(w http.ResponseWriter, r *http.Request) {

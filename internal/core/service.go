@@ -51,6 +51,7 @@ type ERPClient interface {
 	CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error)
 	ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string, acceptedQty, returnedQty float64, returnReason, returnComment string) (erpnext.PurchaseReceiptSubmissionResult, error)
 	UploadSupplierImage(ctx context.Context, baseURL, apiKey, apiSecret, supplierID, filename, contentType string, content []byte) (string, error)
+	DownloadFile(ctx context.Context, baseURL, apiKey, apiSecret, fileURL string) (string, []byte, error)
 }
 
 type ERPAuthenticator struct {
@@ -70,6 +71,22 @@ type ERPAuthenticator struct {
 	profiles         *ProfileStore
 	supplierAdmin    *AdminSupplierStore
 	envPersister     EnvPersister
+}
+
+func (a *ERPAuthenticator) BaseURL() string {
+	return a.baseURL
+}
+
+func (a *ERPAuthenticator) APIKey() string {
+	return a.apiKey
+}
+
+func (a *ERPAuthenticator) APISecret() string {
+	return a.apiSecret
+}
+
+func (a *ERPAuthenticator) DownloadFile(ctx context.Context, baseURL, apiKey, apiSecret, fileURL string) (string, []byte, error) {
+	return a.erp.DownloadFile(ctx, baseURL, apiKey, apiSecret, fileURL)
 }
 
 type EnvPersister interface {

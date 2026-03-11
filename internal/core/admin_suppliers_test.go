@@ -112,6 +112,10 @@ func (s *adminSuppliersERPStub) UpdatePurchaseReceiptRemarks(ctx context.Context
 	return nil
 }
 
+func (s *adminSuppliersERPStub) DownloadFile(ctx context.Context, baseURL, apiKey, apiSecret, fileURL string) (string, []byte, error) {
+	return "", nil, nil
+}
+
 func (s *adminSuppliersERPStub) CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret string, input erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
 	return erpnext.PurchaseReceiptDraft{}, nil
 }

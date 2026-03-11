@@ -217,6 +217,10 @@ func (f *fakeERPClient) UploadSupplierImage(_ context.Context, _, _, _, supplier
 	return fileURL, nil
 }
 
+func (f *fakeERPClient) DownloadFile(_ context.Context, _, _, _, fileURL string) (string, []byte, error) {
+	return "image/png", []byte("pngdata"), nil
+}
+
 func filterFakeItems(items []erpnext.Item, query string, limit int) []erpnext.Item {
 	if limit <= 0 || limit > len(items) {
 		limit = len(items)
@@ -441,7 +445,8 @@ func TestServerProfileUpdateAndAvatarFlow(t *testing.T) {
 	if err := json.NewDecoder(avatarResp.Body).Decode(&avatarPrincipal); err != nil {
 		t.Fatalf("failed to decode avatar response: %v", err)
 	}
-	if avatarPrincipal.AvatarURL != "http://localhost:8000/files/SUP-001-avatar.png" {
+	expectedAvatarURL := ts.URL + "/v1/mobile/profile/avatar/view?token=" + loginPayload.Token
+	if avatarPrincipal.AvatarURL != expectedAvatarURL {
 		t.Fatalf("unexpected avatar url: %+v", avatarPrincipal)
 	}
 	if fakeERP.uploadedAvatarURL == "" {
