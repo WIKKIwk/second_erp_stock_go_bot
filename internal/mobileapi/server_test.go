@@ -24,6 +24,7 @@ type fakeERPClient struct {
 	supplierReceipts  []erpnext.PurchaseReceiptDraft
 	telegramReceipts  []erpnext.PurchaseReceiptDraft
 	batchCommentKeys  [][]string
+	updateRemarksErr  error
 }
 
 func (f *fakeERPClient) SearchItems(_ context.Context, _, _, _, query string, limit int) ([]erpnext.Item, error) {
@@ -215,7 +216,7 @@ func (f *fakeERPClient) AddPurchaseReceiptComment(_ context.Context, _, _, _, na
 }
 
 func (f *fakeERPClient) UpdatePurchaseReceiptRemarks(_ context.Context, _, _, _, name, remarks string) error {
-	return nil
+	return f.updateRemarksErr
 }
 
 func (f *fakeERPClient) CreateDraftPurchaseReceipt(_ context.Context, _, _, _ string, _ erpnext.CreatePurchaseReceiptInput) (erpnext.PurchaseReceiptDraft, error) {
@@ -861,6 +862,51 @@ func TestServerNotificationDetailAndCommentFlow(t *testing.T) {
 		t.Fatalf("expected comments to grow, got %+v", detail.Comments)
 	}
 }
+
+func TestServerSupplierAcknowledgmentCommentSucceedsWhenRemarksBackfillFails(t *testing.T) {
+	fakeERP := &fakeERPClient{
+		updateRemarksErr: assertErr("remarks update failed"),
+	}
+	server := NewServer(NewERPAuthenticator(
+		fakeERP,
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{
+		Role:        RoleSupplier,
+		DisplayName: "Abdulloh",
+		Ref:         "SUP-001",
+	})
+	if err != nil {
+		t.Fatalf("failed to create supplier session: %v", err)
+	}
+
+	commentReq := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/mobile/notifications/comments?receipt_id=MAT-PRE-0001",
+		bytes.NewReader([]byte(`{"message":"Tasdiqlayman, shu holat bo'lganini ko'rdim."}`)),
+	)
+	commentReq.Header.Set("Authorization", "Bearer "+token)
+	commentReq.Header.Set("Content-Type", "application/json")
+	commentResp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(commentResp, commentReq)
+	if commentResp.Code != http.StatusOK {
+		t.Fatalf("unexpected supplier acknowledgment status: %d body=%s", commentResp.Code, commentResp.Body.String())
+	}
+}
+
+type assertErr string
+
+func (e assertErr) Error() string { return string(e) }
 
 func TestServerAdminActivity(t *testing.T) {
 	server := NewServer(NewERPAuthenticator(

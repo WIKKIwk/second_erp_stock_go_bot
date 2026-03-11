@@ -513,7 +513,7 @@ func (a *ERPAuthenticator) AddNotificationComment(ctx context.Context, principal
 			trimmedMessage,
 		)
 		if err := a.erp.UpdatePurchaseReceiptRemarks(ctx, a.baseURL, a.apiKey, a.apiSecret, detail.Record.ID, remarks); err != nil {
-			return NotificationDetail{}, err
+			// Supplier acknowledgment is already stored as a comment; remarks backfill is best-effort.
 		}
 	}
 	return a.NotificationDetail(ctx, principal, receiptID)
