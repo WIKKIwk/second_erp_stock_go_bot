@@ -515,3 +515,40 @@ func TestServerAdminActivity(t *testing.T) {
 		t.Fatalf("unexpected activity payload: %+v", items)
 	}
 }
+
+func TestServerAdminWerkaCodeRegenerate(t *testing.T) {
+	server := NewServer(NewERPAuthenticator(
+		&fakeERPClient{},
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{Role: RoleAdmin, DisplayName: "Admin"})
+	if err != nil {
+		t.Fatalf("failed to create admin session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/mobile/admin/werka/code/regenerate", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", resp.Code)
+	}
+
+	var settings AdminSettings
+	if err := json.NewDecoder(resp.Body).Decode(&settings); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !strings.HasPrefix(settings.WerkaCode, "20") {
+		t.Fatalf("unexpected werka code: %q", settings.WerkaCode)
+	}
+}

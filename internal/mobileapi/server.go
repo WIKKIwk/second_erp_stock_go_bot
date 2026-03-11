@@ -46,6 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/admin/suppliers/restore", s.handleAdminSupplierRestore)
 	mux.HandleFunc("/v1/mobile/admin/items", s.handleAdminItems)
 	mux.HandleFunc("/v1/mobile/admin/activity", s.handleAdminActivity)
+	mux.HandleFunc("/v1/mobile/admin/werka/code/regenerate", s.handleAdminWerkaCodeRegenerate)
 	return mux
 }
 
@@ -672,6 +673,28 @@ func (s *Server) handleAdminActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) handleAdminWerkaCodeRegenerate(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if err := requireRole(principal, RoleAdmin); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	settings, err := s.auth.AdminRegenerateWerkaCode()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "werka code regenerate failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (Principal, bool) {

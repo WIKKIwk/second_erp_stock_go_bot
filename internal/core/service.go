@@ -427,6 +427,7 @@ func (a *ERPAuthenticator) AdminSettings() AdminSettings {
 		DefaultUOM:             "Kg",
 		WerkaPhone:             a.werkaPhone,
 		WerkaName:              a.werkaName,
+		WerkaCode:              a.werkaCode,
 		AdminPhone:             a.adminPhone,
 		AdminName:              a.adminName,
 	}
@@ -439,6 +440,7 @@ func (a *ERPAuthenticator) UpdateAdminSettings(input AdminSettings) error {
 	a.defaultWarehouse = strings.TrimSpace(input.DefaultTargetWarehouse)
 	a.werkaPhone = strings.TrimSpace(input.WerkaPhone)
 	a.werkaName = strings.TrimSpace(input.WerkaName)
+	a.werkaCode = strings.TrimSpace(input.WerkaCode)
 	a.adminPhone = strings.TrimSpace(input.AdminPhone)
 	a.adminName = strings.TrimSpace(input.AdminName)
 
@@ -451,11 +453,28 @@ func (a *ERPAuthenticator) UpdateAdminSettings(input AdminSettings) error {
 			"ERP_DEFAULT_UOM":              strings.TrimSpace(input.DefaultUOM),
 			"WERKA_PHONE":                  a.werkaPhone,
 			"WERKA_NAME":                   a.werkaName,
+			"MOBILE_DEV_WERKA_CODE":        a.werkaCode,
 			"ADMINKA_PHONE":                a.adminPhone,
 			"ADMINKA_NAME":                 a.adminName,
 		})
 	}
 	return nil
+}
+
+func (a *ERPAuthenticator) AdminRegenerateWerkaCode() (AdminSettings, error) {
+	code, err := randomSupplierCode(a.werkaPrefix, map[string]struct{}{})
+	if err != nil {
+		return AdminSettings{}, err
+	}
+	a.werkaCode = code
+	if a.envPersister != nil {
+		if err := a.envPersister.Upsert(map[string]string{
+			"MOBILE_DEV_WERKA_CODE": a.werkaCode,
+		}); err != nil {
+			return AdminSettings{}, err
+		}
+	}
+	return a.AdminSettings(), nil
 }
 
 type SessionManager struct {

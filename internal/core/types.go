@@ -74,6 +74,7 @@ type AdminSettings struct {
 	DefaultUOM             string `json:"default_uom"`
 	WerkaPhone             string `json:"werka_phone"`
 	WerkaName              string `json:"werka_name"`
+	WerkaCode              string `json:"werka_code"`
 	AdminPhone             string `json:"admin_phone"`
 	AdminName              string `json:"admin_name"`
 }
