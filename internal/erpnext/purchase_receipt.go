@@ -512,6 +512,7 @@ func (c *Client) fetchSupplierItemCodes(ctx context.Context, normalized, apiKey,
 		{"supplier", "=", supplier},
 	})
 	params := url.Values{}
+	params.Set("parent", "Item")
 	params.Set("fields", `["parent"]`)
 	params.Set("filters", string(filtersJSON))
 	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
