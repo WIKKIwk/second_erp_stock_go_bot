@@ -1,0 +1,135 @@
+package core
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+type PushTokenRecord struct {
+	Token     string    `json:"token"`
+	Platform  string    `json:"platform"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type PushTokenStore struct {
+	path string
+	mu   sync.Mutex
+}
+
+func NewPushTokenStore(path string) *PushTokenStore {
+	return &PushTokenStore{path: path}
+}
+
+func (s *PushTokenStore) Put(key, token, platform string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	all, err := s.readAllLocked()
+	if err != nil {
+		return err
+	}
+	records := all[key]
+	trimmedToken := strings.TrimSpace(token)
+	filtered := make([]PushTokenRecord, 0, len(records)+1)
+	for _, item := range records {
+		if strings.TrimSpace(item.Token) == trimmedToken {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	filtered = append(filtered, PushTokenRecord{
+		Token:     trimmedToken,
+		Platform:  strings.TrimSpace(platform),
+		UpdatedAt: time.Now().UTC(),
+	})
+	all[key] = filtered
+	return s.writeAllLocked(all)
+}
+
+func (s *PushTokenStore) Delete(key, token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	all, err := s.readAllLocked()
+	if err != nil {
+		return err
+	}
+	records := all[key]
+	filtered := make([]PushTokenRecord, 0, len(records))
+	for _, item := range records {
+		if strings.TrimSpace(item.Token) == strings.TrimSpace(token) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if len(filtered) == 0 {
+		delete(all, key)
+	} else {
+		all[key] = filtered
+	}
+	return s.writeAllLocked(all)
+}
+
+func (s *PushTokenStore) List(key string) ([]PushTokenRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	all, err := s.readAllLocked()
+	if err != nil {
+		return nil, err
+	}
+	return append([]PushTokenRecord(nil), all[key]...), nil
+}
+
+func (s *PushTokenStore) readAllLocked() (map[string][]PushTokenRecord, error) {
+	if _, err := os.Stat(s.path); err != nil {
+		if os.IsNotExist(err) {
+			return map[string][]PushTokenRecord{}, nil
+		}
+		return nil, err
+	}
+
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return map[string][]PushTokenRecord{}, nil
+	}
+
+	var data map[string][]PushTokenRecord
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, err
+	}
+	if data == nil {
+		data = map[string][]PushTokenRecord{}
+	}
+	return data, nil
+}
+
+func (s *PushTokenStore) writeAllLocked(data map[string][]PushTokenRecord) error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), "push-tokens-*.json")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, s.path)
+}

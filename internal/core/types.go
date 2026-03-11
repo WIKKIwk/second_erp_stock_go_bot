@@ -84,6 +84,11 @@ type NotificationCommentCreateRequest struct {
 	Message string `json:"message"`
 }
 
+type PushTokenRegisterRequest struct {
+	Token    string `json:"token"`
+	Platform string `json:"platform"`
+}
+
 type ProfileUpdateRequest struct {
 	Nickname string `json:"nickname"`
 }

@@ -12,12 +12,14 @@ import (
 type Server struct {
 	auth     *ERPAuthenticator
 	sessions *SessionManager
+	push     *PushTokenStore
 }
 
 func NewServer(auth *ERPAuthenticator) *Server {
 	return &Server{
 		auth:     auth,
 		sessions: NewSessionManager(),
+		push:     NewPushTokenStore("data/mobile_push_tokens.json"),
 	}
 }
 
@@ -29,6 +31,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/me", s.handleMe)
 	mux.HandleFunc("/v1/mobile/profile", s.handleProfile)
 	mux.HandleFunc("/v1/mobile/profile/avatar", s.handleProfileAvatar)
+	mux.HandleFunc("/v1/mobile/push/token", s.handlePushToken)
 	mux.HandleFunc("/v1/mobile/notifications/detail", s.handleNotificationDetail)
 	mux.HandleFunc("/v1/mobile/notifications/comments", s.handleNotificationComment)
 	mux.HandleFunc("/v1/mobile/supplier/history", s.handleSupplierHistory)
@@ -272,6 +275,52 @@ func (s *Server) handleNotificationComment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+func (s *Server) handlePushToken(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if principal.Role != RoleSupplier && principal.Role != RoleWerka {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		var req PushTokenRegisterRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+			return
+		}
+		if strings.TrimSpace(req.Token) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "token is required"})
+			return
+		}
+		if err := s.push.Put(pushTokenKey(principal), req.Token, req.Platform); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "push token save failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case http.MethodDelete:
+		token := strings.TrimSpace(r.URL.Query().Get("token"))
+		if token == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "token is required"})
+			return
+		}
+		if err := s.push.Delete(pushTokenKey(principal), token); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "push token delete failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+func pushTokenKey(principal Principal) string {
+	return string(principal.Role) + ":" + strings.TrimSpace(principal.Ref)
 }
 
 func (s *Server) handleSupplierHistory(w http.ResponseWriter, r *http.Request) {

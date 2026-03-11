@@ -21,6 +21,7 @@ type SupplierItem = core.SupplierItem
 type CreateDispatchRequest = core.CreateDispatchRequest
 type ConfirmReceiptRequest = core.ConfirmReceiptRequest
 type NotificationCommentCreateRequest = core.NotificationCommentCreateRequest
+type PushTokenRegisterRequest = core.PushTokenRegisterRequest
 type ProfileUpdateRequest = core.ProfileUpdateRequest
 type AdminSettings = core.AdminSettings
 type AdminSupplier = core.AdminSupplier
