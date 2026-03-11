@@ -735,12 +735,26 @@ func (c *Client) fetchWarehouseCompany(ctx context.Context, normalized, apiKey, 
 }
 
 func (c *Client) findAlternateWarehouse(ctx context.Context, normalized, apiKey, apiSecret, acceptedWarehouse string) (string, error) {
-	items, err := c.SearchWarehouses(ctx, normalized, apiKey, apiSecret, "", 20)
+	params := url.Values{}
+	params.Set("fields", `["name","is_group"]`)
+	params.Set("limit_page_length", "50")
+
+	var payload struct {
+		Data []struct {
+			Name    string `json:"name"`
+			IsGroup int    `json:"is_group"`
+		} `json:"data"`
+	}
+	endpoint := normalized + "/api/resource/Warehouse?" + params.Encode()
+	err := c.doJSON(ctx, endpoint, apiKey, apiSecret, &payload)
 	if err != nil {
 		return "", err
 	}
-	for _, item := range items {
+	for _, item := range payload.Data {
 		name := strings.TrimSpace(item.Name)
+		if item.IsGroup != 0 {
+			continue
+		}
 		if name == "" || strings.EqualFold(name, strings.TrimSpace(acceptedWarehouse)) {
 			continue
 		}

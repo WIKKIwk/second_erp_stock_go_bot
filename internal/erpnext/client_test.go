@@ -452,8 +452,8 @@ func TestConfirmPurchaseReceiptClearsRejectedWarehouseWhenSameAsAccepted(t *test
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/method/frappe.desk.search.search_link":
-			_, _ = w.Write([]byte(`{"message":[{"value":"Stores - CH"},{"value":"Finished Goods - A"}]}`))
+		case "/api/resource/Warehouse":
+			_, _ = w.Write([]byte(`{"data":[{"name":"All Warehouses - A","is_group":1},{"name":"Stores - CH","is_group":0},{"name":"Finished Goods - A","is_group":0}]}`))
 		case "/api/resource/Purchase Receipt/MAT-PRE-0002", "/api/resource/Purchase%20Receipt/MAT-PRE-0002":
 			switch r.Method {
 			case http.MethodGet:
