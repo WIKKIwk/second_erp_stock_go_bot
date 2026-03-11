@@ -35,6 +35,7 @@ type LoginResponse struct {
 
 type DispatchRecord struct {
 	ID           string  `json:"id"`
+	SupplierRef  string  `json:"supplier_ref,omitempty"`
 	SupplierName string  `json:"supplier_name"`
 	ItemCode     string  `json:"item_code"`
 	ItemName     string  `json:"item_name"`

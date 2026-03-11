@@ -345,6 +345,7 @@ func pushTokenKey(principal Principal) string {
 func dispatchRecordData(record DispatchRecord) map[string]string {
 	return map[string]string{
 		"id":            record.ID,
+		"supplier_ref":  record.SupplierRef,
 		"supplier_name": record.SupplierName,
 		"item_code":     record.ItemCode,
 		"item_name":     record.ItemName,

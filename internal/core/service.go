@@ -347,6 +347,7 @@ func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]Dispa
 			}
 			result = append(result, DispatchRecord{
 				ID:           supplierAckEventPrefix + item.Name + ":" + comment.ID,
+				SupplierRef:  item.Supplier,
 				SupplierName: item.SupplierName,
 				ItemCode:     item.ItemCode,
 				ItemName:     item.ItemName,
@@ -746,6 +747,7 @@ func mapPurchaseReceiptToDispatchRecord(item erpnext.PurchaseReceiptDraft, fallb
 	}
 	return DispatchRecord{
 		ID:           item.Name,
+		SupplierRef:  item.Supplier,
 		SupplierName: supplierName,
 		ItemCode:     item.ItemCode,
 		ItemName:     item.ItemName,
