@@ -308,3 +308,44 @@ func TestAdminSupplierSummaryCountsRemovedAsBlockedBucket(t *testing.T) {
 		t.Fatalf("unexpected summary: %+v", summary)
 	}
 }
+
+func TestAdminSearchItemsCachesResolvedWarehouse(t *testing.T) {
+	searchWarehouseCalls := 0
+	stub := &adminSuppliersERPStub{
+		searchWarehouses: func(ctx context.Context, baseURL, apiKey, apiSecret, query string, limit int) ([]erpnext.Warehouse, error) {
+			searchWarehouseCalls++
+			return []erpnext.Warehouse{{Name: "Stores - A"}}, nil
+		},
+	}
+
+	auth := NewERPAuthenticator(
+		stub,
+		"http://erp.test",
+		"key",
+		"secret",
+		"",
+		"10",
+		"20",
+		"",
+		"",
+		"",
+		nil,
+		nil,
+	)
+
+	_, err := auth.mapSupplierItems(context.Background(), []erpnext.Item{
+		{Code: "ITEM-001", Name: "Bolt", UOM: "Nos"},
+	})
+	if err != nil {
+		t.Fatalf("first mapSupplierItems() error = %v", err)
+	}
+	_, err = auth.mapSupplierItems(context.Background(), []erpnext.Item{
+		{Code: "ITEM-002", Name: "Nut", UOM: "Nos"},
+	})
+	if err != nil {
+		t.Fatalf("second mapSupplierItems() error = %v", err)
+	}
+	if searchWarehouseCalls != 1 {
+		t.Fatalf("expected 1 warehouse lookup, got %d", searchWarehouseCalls)
+	}
+}

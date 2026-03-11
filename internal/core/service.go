@@ -56,22 +56,24 @@ type ERPClient interface {
 }
 
 type ERPAuthenticator struct {
-	erp              ERPClient
-	baseURL          string
-	apiKey           string
-	apiSecret        string
-	defaultWarehouse string
-	supplierPrefix   string
-	werkaPrefix      string
-	werkaCode        string
-	werkaPhone       string
-	werkaName        string
-	adminPhone       string
-	adminName        string
-	adminCode        string
-	profiles         *ProfileStore
-	supplierAdmin    *AdminSupplierStore
-	envPersister     EnvPersister
+	erp               ERPClient
+	baseURL           string
+	apiKey            string
+	apiSecret         string
+	defaultWarehouse  string
+	supplierPrefix    string
+	werkaPrefix       string
+	werkaCode         string
+	werkaPhone        string
+	werkaName         string
+	adminPhone        string
+	adminName         string
+	adminCode         string
+	profiles          *ProfileStore
+	supplierAdmin     *AdminSupplierStore
+	envPersister      EnvPersister
+	warehouseMu       sync.RWMutex
+	resolvedWarehouse string
 }
 
 func (a *ERPAuthenticator) BaseURL() string {
@@ -563,6 +565,9 @@ func (a *ERPAuthenticator) resolveWarehouse(ctx context.Context) (string, error)
 	if strings.TrimSpace(a.defaultWarehouse) != "" {
 		return strings.TrimSpace(a.defaultWarehouse), nil
 	}
+	if cached := a.cachedWarehouse(); cached != "" {
+		return cached, nil
+	}
 
 	items, err := a.erp.SearchWarehouses(ctx, a.baseURL, a.apiKey, a.apiSecret, "", 1)
 	if err != nil {
@@ -571,7 +576,9 @@ func (a *ERPAuthenticator) resolveWarehouse(ctx context.Context) (string, error)
 	if len(items) == 0 || strings.TrimSpace(items[0].Name) == "" {
 		return "", fmt.Errorf("warehouse is not configured")
 	}
-	return strings.TrimSpace(items[0].Name), nil
+	warehouse := strings.TrimSpace(items[0].Name)
+	a.setCachedWarehouse(warehouse)
+	return warehouse, nil
 }
 
 func (a *ERPAuthenticator) ConfirmReceipt(ctx context.Context, receiptID string, acceptedQty, returnedQty float64, returnReason, returnComment string) (DispatchRecord, error) {
@@ -627,6 +634,7 @@ func (a *ERPAuthenticator) UpdateAdminSettings(input AdminSettings) error {
 	a.apiKey = strings.TrimSpace(input.ERPAPIKey)
 	a.apiSecret = strings.TrimSpace(input.ERPAPISecret)
 	a.defaultWarehouse = strings.TrimSpace(input.DefaultTargetWarehouse)
+	a.setCachedWarehouse("")
 	a.werkaPhone = strings.TrimSpace(input.WerkaPhone)
 	a.werkaName = strings.TrimSpace(input.WerkaName)
 	a.werkaCode = strings.TrimSpace(input.WerkaCode)
@@ -683,6 +691,18 @@ func (a *ERPAuthenticator) AdminRegenerateWerkaCode() (AdminSettings, error) {
 
 func (a *ERPAuthenticator) nowUTC() time.Time {
 	return time.Now().UTC()
+}
+
+func (a *ERPAuthenticator) cachedWarehouse() string {
+	a.warehouseMu.RLock()
+	defer a.warehouseMu.RUnlock()
+	return strings.TrimSpace(a.resolvedWarehouse)
+}
+
+func (a *ERPAuthenticator) setCachedWarehouse(warehouse string) {
+	a.warehouseMu.Lock()
+	defer a.warehouseMu.Unlock()
+	a.resolvedWarehouse = strings.TrimSpace(warehouse)
 }
 
 type SessionManager struct {
