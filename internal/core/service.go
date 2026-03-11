@@ -324,7 +324,7 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 	return result, nil
 }
 
-func (a *ERPAuthenticator) AdminActivity(ctx context.Context, limit int) ([]DispatchRecord, error) {
+func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]DispatchRecord, error) {
 	items, err := a.erp.ListTelegramPurchaseReceipts(ctx, a.baseURL, a.apiKey, a.apiSecret, limit)
 	if err != nil {
 		return nil, err
@@ -350,6 +350,10 @@ func (a *ERPAuthenticator) AdminActivity(ctx context.Context, limit int) ([]Disp
 		})
 	}
 	return result, nil
+}
+
+func (a *ERPAuthenticator) AdminActivity(ctx context.Context, limit int) ([]DispatchRecord, error) {
+	return a.WerkaHistory(ctx, limit)
 }
 
 func (a *ERPAuthenticator) SupplierItems(ctx context.Context, principal Principal, query string, limit int) ([]SupplierItem, error) {

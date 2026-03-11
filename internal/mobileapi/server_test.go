@@ -549,6 +549,43 @@ func TestServerAdminSupplierManagementFlow(t *testing.T) {
 	}
 }
 
+func TestServerWerkaHistoryFlow(t *testing.T) {
+	server := NewServer(NewERPAuthenticator(
+		&fakeERPClient{},
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{Role: RoleWerka, DisplayName: "Werka"})
+	if err != nil {
+		t.Fatalf("failed to create werka session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/mobile/werka/history", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected werka history status: %d", resp.Code)
+	}
+
+	var items []DispatchRecord
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		t.Fatalf("failed to decode werka history: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected werka history items")
+	}
+}
+
 func TestServerAdminActivity(t *testing.T) {
 	server := NewServer(NewERPAuthenticator(
 		&fakeERPClient{},
