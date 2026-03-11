@@ -452,6 +452,8 @@ func TestConfirmPurchaseReceiptClearsRejectedWarehouseWhenSameAsAccepted(t *test
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/method/frappe.desk.search.search_link":
+			_, _ = w.Write([]byte(`{"message":[{"value":"Stores - CH"},{"value":"Finished Goods - A"}]}`))
 		case "/api/resource/Purchase Receipt/MAT-PRE-0002", "/api/resource/Purchase%20Receipt/MAT-PRE-0002":
 			switch r.Method {
 			case http.MethodGet:
@@ -487,8 +489,8 @@ func TestConfirmPurchaseReceiptClearsRejectedWarehouseWhenSameAsAccepted(t *test
 	if !ok {
 		t.Fatalf("unexpected item payload: %+v", items[0])
 	}
-	if got := first["rejected_warehouse"]; got != "" {
-		t.Fatalf("expected empty rejected_warehouse, got %+v", got)
+	if got := first["rejected_warehouse"]; got != "Finished Goods - A" {
+		t.Fatalf("expected alternate rejected_warehouse, got %+v", got)
 	}
 }
 

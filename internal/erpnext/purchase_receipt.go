@@ -512,8 +512,11 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	if returnedQty > 0 {
 		rejectedWarehouse := strings.TrimSpace(getStringValue(firstItem["rejected_warehouse"]))
 		acceptedWarehouse := strings.TrimSpace(getStringValue(firstItem["warehouse"]))
-		if strings.EqualFold(rejectedWarehouse, acceptedWarehouse) {
-			rejectedWarehouse = ""
+		if rejectedWarehouse == "" || strings.EqualFold(rejectedWarehouse, acceptedWarehouse) {
+			rejectedWarehouse, err = c.findAlternateWarehouse(ctx, normalized, apiKey, apiSecret, acceptedWarehouse)
+			if err != nil {
+				return PurchaseReceiptSubmissionResult{}, err
+			}
 		}
 		firstItem["rejected_warehouse"] = rejectedWarehouse
 	} else {
@@ -727,6 +730,21 @@ func (c *Client) fetchWarehouseCompany(ctx context.Context, normalized, apiKey, 
 		return "", fmt.Errorf("company not found for warehouse %s", warehouse)
 	}
 	return payload.Data.Company, nil
+}
+
+func (c *Client) findAlternateWarehouse(ctx context.Context, normalized, apiKey, apiSecret, acceptedWarehouse string) (string, error) {
+	items, err := c.SearchWarehouses(ctx, normalized, apiKey, apiSecret, "", 20)
+	if err != nil {
+		return "", err
+	}
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		if name == "" || strings.EqualFold(name, strings.TrimSpace(acceptedWarehouse)) {
+			continue
+		}
+		return name, nil
+	}
+	return "", fmt.Errorf("rejected warehouse topilmadi: %s", acceptedWarehouse)
 }
 
 func (c *Client) fetchPurchaseReceiptDoc(ctx context.Context, normalized, apiKey, apiSecret, name string) (map[string]interface{}, error) {
