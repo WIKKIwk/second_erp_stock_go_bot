@@ -4,6 +4,8 @@ Current phase: `5. Hard test`
 
 Date: `2026-03-11`
 
+Last updated: `2026-03-12`
+
 ## Current status
 
 Safe runtime checks completed:
@@ -13,6 +15,7 @@ Safe runtime checks completed:
 - werka login works on local `core`
 - `go test ./...` passes
 - desktop/API hard-test flow was executed successfully on `2026-03-11`
+- Android device was inspected over ADB on `2026-03-12`
 
 Current blocker:
 
@@ -20,6 +23,7 @@ Current blocker:
 - earlier ERP-local and partial-return issues were fixed during hard test
 - Android release APK is ready at `/home/wikki/local.git/erpnext_stock_telegram/mobile_app/build/app/outputs/flutter-apk/accord.apk`
 - current domain build target: `https://core.wspace.sbs`
+- supplier-side FCM stale token issue was fixed during live verification
 
 ## Executed results
 
@@ -48,6 +52,30 @@ Representative observed results:
 - partial return now submits successfully with an alternate non-group rejected warehouse
 - supplier acknowledgment no longer fails if remarks backfill is rejected by ERP
 - supplier A receipt detail is blocked for supplier B
+- stale supplier FCM token is now dropped automatically and delivery continues to the next valid token
+
+## Android push diagnostics
+
+Executed on `2026-03-12`:
+
+- app package found on device: `com.example.erpnext_stock_mobile`
+- `POST_NOTIFICATIONS` permission was granted
+- backend FCM sender was enabled for project `oneni-ami`
+- stale supplier token returned `UNREGISTERED` and was removed
+- backend then delivered successfully to the remaining valid supplier token
+- Android `dumpsys notification` showed live `accord_updates` / `FCM-Notification:*` records for the app
+
+Representative backend log sequence:
+
+- `push sender dropped stale token for supplier:stocker`
+- `push sender delivered to supplier:stocker`
+
+Interpretation:
+
+- backend delivery is working
+- Android system notification records are being created
+- remaining uncertainty is device-side presentation behavior as seen by the user
+- `werka:werka` still has no token in `data/mobile_push_tokens.json`, so werka closed-app push is not yet covered
 
 ## Before running hard test
 
@@ -209,4 +237,7 @@ Mark `Hard test` complete only after:
 Current assessment:
 
 - desktop/API hard-test portion: complete
-- Android real-device push verification: still pending
+- Android supplier push backend delivery: verified
+- Android system notification creation: verified by ADB
+- remaining manual check: user-visible closed/background notification presentation on device
+- remaining functional gap: werka token/device verification
