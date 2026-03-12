@@ -14,4 +14,6 @@
 
 - [ ] Hard test
   Supplier -> werka, werka -> supplier, foreground/background/closed holatlarda to'liq tekshirish.
-  Desktop/API oqimi o'tdi. Qolgan asosiy blok: real Android background/closed push verification. Amaliy checklist: `HARD_TEST.md`.
+  Desktop/API oqimi o'tdi. Qolgan asosiy blok: real Android background/closed push verification.
+  APK: `/home/wikki/local.git/erpnext_stock_telegram/mobile_app/build/app/outputs/flutter-apk/accord.apk`
+  Amaliy checklist: `HARD_TEST.md`.

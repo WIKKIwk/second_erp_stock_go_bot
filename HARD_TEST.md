@@ -18,6 +18,8 @@ Current blocker:
 
 - Android real-device push is not yet verified to completion
 - earlier ERP-local and partial-return issues were fixed during hard test
+- Android release APK is ready at `/home/wikki/local.git/erpnext_stock_telegram/mobile_app/build/app/outputs/flutter-apk/accord.apk`
+- current domain build target: `https://core.wspace.sbs`
 
 ## Executed results
 
@@ -182,7 +184,7 @@ This is required for full closure of the phase and cannot be treated as complete
 
 ### Required device test
 
-- install fresh domain APK
+- install fresh domain APK: `/home/wikki/local.git/erpnext_stock_telegram/mobile_app/build/app/outputs/flutter-apk/accord.apk`
 - login and allow notification permission
 - verify token is stored in `data/mobile_push_tokens.json`
 - with app foregrounded, backgrounded, and closed:
