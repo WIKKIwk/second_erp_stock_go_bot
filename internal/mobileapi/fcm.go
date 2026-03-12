@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -90,19 +91,24 @@ func (s *fcmSender) SendToKey(ctx context.Context, key, title, body string, data
 	if s == nil {
 		return nil
 	}
+	key = strings.TrimSpace(key)
 	tokens, err := s.store.List(strings.TrimSpace(key))
 	if err != nil {
 		return err
 	}
 	if len(tokens) == 0 {
-		log.Printf("push sender skipped: no tokens for %s", strings.TrimSpace(key))
+		log.Printf("push sender skipped: no tokens for %s", key)
 		return nil
 	}
 	token, err := s.tokenSrc.Token()
 	if err != nil {
 		return err
 	}
-	log.Printf("push sender sending to %s (%d token(s))", strings.TrimSpace(key), len(tokens))
+	log.Printf("push sender sending to %s (%d token(s))", key, len(tokens))
+	var (
+		sentAny bool
+		lastErr error
+	)
 	for _, item := range tokens {
 		payload := map[string]interface{}{
 			"message": map[string]interface{}{
@@ -130,13 +136,56 @@ func (s *fcmSender) SendToKey(ctx context.Context, key, title, body string, data
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
-			return err
+			lastErr = err
+			log.Printf("push sender request failed for %s token=%s: %v", key, truncateToken(item.Token), err)
+			continue
 		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			resp.Body.Close()
-			return fmt.Errorf("fcm send failed with status %d", resp.StatusCode)
-		}
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		_ = resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("fcm send failed with status %d", resp.StatusCode)
+			log.Printf(
+				"push sender token failed for %s token=%s status=%d body=%s",
+				key,
+				truncateToken(item.Token),
+				resp.StatusCode,
+				strings.TrimSpace(string(respBody)),
+			)
+			if shouldDropPushToken(resp.StatusCode, respBody) {
+				if err := s.store.Delete(key, item.Token); err != nil {
+					log.Printf("push sender failed to drop stale token for %s token=%s: %v", key, truncateToken(item.Token), err)
+				} else {
+					log.Printf("push sender dropped stale token for %s token=%s", key, truncateToken(item.Token))
+				}
+			}
+			continue
+		}
+		sentAny = true
+		log.Printf("push sender delivered to %s token=%s", key, truncateToken(item.Token))
+	}
+	if sentAny {
+		return nil
+	}
+	if lastErr != nil {
+		return lastErr
 	}
 	return nil
+}
+
+func shouldDropPushToken(statusCode int, body []byte) bool {
+	if statusCode != http.StatusNotFound && statusCode != http.StatusBadRequest {
+		return false
+	}
+	lower := strings.ToLower(string(body))
+	return strings.Contains(lower, "unregistered") ||
+		strings.Contains(lower, "requested entity was not found") ||
+		strings.Contains(lower, "registration token is not a valid fcm registration token")
+}
+
+func truncateToken(token string) string {
+	trimmed := strings.TrimSpace(token)
+	if len(trimmed) <= 12 {
+		return trimmed
+	}
+	return trimmed[:6] + "..." + trimmed[len(trimmed)-6:]
 }
