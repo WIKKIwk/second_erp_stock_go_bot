@@ -355,13 +355,15 @@ func (s *Server) handleNotificationComment(w http.ResponseWriter, r *http.Reques
 		record.EventType = "supplier_ack"
 		record.Highlight = "Supplier mahsulotni qaytarganingizni tasdiqladi"
 		record.Note = ""
-		_ = s.sender.SendToKey(
+		if err := s.sender.SendToKey(
 			r.Context(),
 			string(RoleWerka)+":werka",
 			"Supplier tasdiqladi",
 			record.Highlight,
 			dispatchRecordData(record),
-		)
+		); err != nil {
+			log.Printf("push send failed for werka acknowledgment event: %v", err)
+		}
 	}
 	writeJSON(w, http.StatusOK, detail)
 }
@@ -495,13 +497,15 @@ func (s *Server) handleCreateDispatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "dispatch create failed"})
 		return
 	}
-	_ = s.sender.SendToKey(
+	if err := s.sender.SendToKey(
 		r.Context(),
 		string(RoleWerka)+":werka",
 		record.SupplierName,
 		fmt.Sprintf("%s • %.0f %s qabul kutmoqda.", record.ItemCode, record.SentQty, record.UOM),
 		dispatchRecordData(record),
-	)
+	); err != nil {
+		log.Printf("push send failed for werka dispatch notify: %v", err)
+	}
 	writeJSON(w, http.StatusOK, record)
 }
 
@@ -574,13 +578,15 @@ func (s *Server) handleWerkaConfirm(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "receipt confirm failed"})
 		return
 	}
-	_ = s.sender.SendToKey(
+	if err := s.sender.SendToKey(
 		r.Context(),
 		string(RoleSupplier)+":"+strings.TrimSpace(record.SupplierName),
 		record.ItemCode,
 		fmt.Sprintf("Status: %s", strings.TrimSpace(record.Status)),
 		dispatchRecordData(record),
-	)
+	); err != nil {
+		log.Printf("push send failed for supplier receipt notify (%s): %v", strings.TrimSpace(record.SupplierName), err)
+	}
 	writeJSON(w, http.StatusOK, record)
 }
 

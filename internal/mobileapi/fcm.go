@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,22 +39,27 @@ type fcmSender struct {
 func newPushSender(store *PushTokenStore) pushSender {
 	path := discoverServiceAccountPath()
 	if path == "" {
+		log.Printf("push sender disabled: no firebase admin sdk json found")
 		return noopPushSender{}
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		log.Printf("push sender disabled: read service account failed: %v", err)
 		return noopPushSender{}
 	}
 	creds, err := google.CredentialsFromJSON(context.Background(), raw, "https://www.googleapis.com/auth/firebase.messaging")
 	if err != nil {
+		log.Printf("push sender disabled: parse service account failed: %v", err)
 		return noopPushSender{}
 	}
 	var meta struct {
 		ProjectID string `json:"project_id"`
 	}
 	if err := json.Unmarshal(raw, &meta); err != nil || strings.TrimSpace(meta.ProjectID) == "" {
+		log.Printf("push sender disabled: project_id missing in service account")
 		return noopPushSender{}
 	}
+	log.Printf("push sender enabled for project %s", strings.TrimSpace(meta.ProjectID))
 	return &fcmSender{
 		store:      store,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
@@ -85,13 +91,18 @@ func (s *fcmSender) SendToKey(ctx context.Context, key, title, body string, data
 		return nil
 	}
 	tokens, err := s.store.List(strings.TrimSpace(key))
-	if err != nil || len(tokens) == 0 {
+	if err != nil {
 		return err
+	}
+	if len(tokens) == 0 {
+		log.Printf("push sender skipped: no tokens for %s", strings.TrimSpace(key))
+		return nil
 	}
 	token, err := s.tokenSrc.Token()
 	if err != nil {
 		return err
 	}
+	log.Printf("push sender sending to %s (%d token(s))", strings.TrimSpace(key), len(tokens))
 	for _, item := range tokens {
 		payload := map[string]interface{}{
 			"message": map[string]interface{}{
