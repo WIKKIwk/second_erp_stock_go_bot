@@ -468,6 +468,7 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	if err != nil {
 		return PurchaseReceiptSubmissionResult{}, err
 	}
+	originalDoc := cloneDocumentMap(doc)
 
 	draft, err := mapPurchaseReceiptDraft(doc)
 	if err != nil {
@@ -553,6 +554,9 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 	}
 
 	if err := c.submitDoc(ctx, normalized, apiKey, apiSecret, "Purchase Receipt", name); err != nil {
+		if rollbackErr := c.doJSONRequest(ctx, http.MethodPut, updateEndpoint, apiKey, apiSecret, originalDoc, nil); rollbackErr != nil {
+			return PurchaseReceiptSubmissionResult{}, fmt.Errorf("submit failed: %v; rollback failed: %v", err, rollbackErr)
+		}
 		return PurchaseReceiptSubmissionResult{}, err
 	}
 	if strings.TrimSpace(decisionNote) != "" {
@@ -569,6 +573,18 @@ func (c *Client) ConfirmAndSubmitPurchaseReceipt(ctx context.Context, baseURL, a
 		SupplierDeliveryNote: draft.SupplierDeliveryNote,
 		Note:                 ExtractAccordDecisionNote(decisionNote),
 	}, nil
+}
+
+func cloneDocumentMap(input map[string]interface{}) map[string]interface{} {
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return input
+	}
+	var cloned map[string]interface{}
+	if err := json.Unmarshal(raw, &cloned); err != nil {
+		return input
+	}
+	return cloned
 }
 
 func (c *Client) addComment(ctx context.Context, normalized, apiKey, apiSecret, doctype, name, content string) error {

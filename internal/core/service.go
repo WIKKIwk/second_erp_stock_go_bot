@@ -369,6 +369,9 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
+		if shouldHideStaleWerkaDraft(item) {
+			continue
+		}
 		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
 		if record.Status != "pending" && record.Status != "draft" {
 			continue
@@ -386,6 +389,9 @@ func (a *ERPAuthenticator) WerkaSummary(ctx context.Context) (WerkaHomeSummary, 
 
 	var summary WerkaHomeSummary
 	for _, item := range items {
+		if shouldHideStaleWerkaDraft(item) {
+			continue
+		}
 		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
 		if record.EventType != "" {
 			continue
@@ -410,6 +416,9 @@ func (a *ERPAuthenticator) WerkaStatusBreakdown(ctx context.Context, kind string
 
 	grouped := make(map[string]*WerkaStatusBreakdownEntry)
 	for _, item := range items {
+		if shouldHideStaleWerkaDraft(item) {
+			continue
+		}
 		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
 		if record.EventType != "" {
 			continue
@@ -462,6 +471,9 @@ func (a *ERPAuthenticator) WerkaStatusDetails(ctx context.Context, kind, supplie
 	needle := strings.TrimSpace(supplierRef)
 	result := make([]DispatchRecord, 0, len(items))
 	for _, item := range items {
+		if shouldHideStaleWerkaDraft(item) {
+			continue
+		}
 		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
 		if record.EventType != "" {
 			continue
@@ -605,6 +617,13 @@ func maxFloat(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+func shouldHideStaleWerkaDraft(item erpnext.PurchaseReceiptDraft) bool {
+	if item.DocStatus != 0 {
+		return false
+	}
+	return strings.TrimSpace(erpnext.ExtractAccordDecisionNote(item.Remarks)) != ""
 }
 
 func (a *ERPAuthenticator) NotificationDetail(ctx context.Context, principal Principal, receiptID string) (NotificationDetail, error) {

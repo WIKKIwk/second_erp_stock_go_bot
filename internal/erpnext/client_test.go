@@ -497,6 +497,57 @@ func TestConfirmPurchaseReceiptClearsRejectedWarehouseWhenSameAsAccepted(t *test
 	}
 }
 
+func TestConfirmPurchaseReceiptRollsBackDraftWhenSubmitFails(t *testing.T) {
+	updateBodies := make([]map[string]interface{}, 0, 2)
+
+	docResponse := `{"data":{"doctype":"Purchase Receipt","name":"MAT-PRE-0003","supplier":"SUP-001","posting_date":"2026-03-07","supplier_delivery_note":"TG:+998901234567:20260307120000:10.0000","remarks":"","items":[{"item_code":"ITEM-001","item_name":"Rice","qty":10,"received_qty":10,"uom":"Kg","stock_uom":"Kg","warehouse":"Stores - CH","conversion_factor":1}]}}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/resource/Warehouse":
+			_, _ = w.Write([]byte(`{"data":[{"name":"Stores - CH","is_group":0},{"name":"Finished Goods - A","is_group":0}]}`))
+		case "/api/resource/Purchase Receipt/MAT-PRE-0003", "/api/resource/Purchase%20Receipt/MAT-PRE-0003":
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(docResponse))
+			case http.MethodPut:
+				raw, _ := io.ReadAll(r.Body)
+				var body map[string]interface{}
+				_ = json.Unmarshal(raw, &body)
+				updateBodies = append(updateBodies, body)
+				_, _ = w.Write([]byte(`{"data":{"name":"MAT-PRE-0003"}}`))
+			default:
+				http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			}
+		case "/api/method/frappe.client.submit":
+			http.Error(w, `{"exception":"submit failed"}`, http.StatusBadRequest)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(&http.Client{Timeout: 3 * time.Second})
+	_, err := client.ConfirmAndSubmitPurchaseReceipt(context.Background(), server.URL, "key", "secret", "MAT-PRE-0003", 7, 3, "Yaroqsiz", "rollback test")
+	if err == nil {
+		t.Fatal("expected submit error")
+	}
+	if len(updateBodies) != 2 {
+		t.Fatalf("expected 2 updates (apply + rollback), got %d", len(updateBodies))
+	}
+	secondItems, ok := updateBodies[1]["items"].([]interface{})
+	if !ok || len(secondItems) != 1 {
+		t.Fatalf("unexpected rollback payload: %+v", updateBodies[1])
+	}
+	second, ok := secondItems[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected rollback item payload: %+v", secondItems[0])
+	}
+	if second["qty"] != float64(10) {
+		t.Fatalf("expected rollback to restore qty=10, got %+v", second["qty"])
+	}
+}
+
 func TestSearchWarehousesAndUOMs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
