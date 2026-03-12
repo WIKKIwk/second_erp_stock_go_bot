@@ -393,11 +393,64 @@ func (a *ERPAuthenticator) WerkaSummary(ctx context.Context) (WerkaHomeSummary, 
 		switch record.Status {
 		case "pending", "draft":
 			summary.PendingCount++
-		case "accepted", "partial":
+		case "accepted":
 			summary.ConfirmedCount++
+		case "partial", "rejected", "cancelled":
+			summary.ReturnedCount++
 		}
 	}
 	return summary, nil
+}
+
+func (a *ERPAuthenticator) WerkaStatusBreakdown(ctx context.Context, kind string) ([]WerkaStatusBreakdownEntry, error) {
+	items, err := a.collectTelegramPurchaseReceipts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	grouped := make(map[string]*WerkaStatusBreakdownEntry)
+	for _, item := range items {
+		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
+		if record.EventType != "" {
+			continue
+		}
+		if !recordMatchesWerkaBreakdown(record, kind) {
+			continue
+		}
+
+		key := strings.TrimSpace(record.SupplierRef)
+		if key == "" {
+			key = strings.TrimSpace(record.SupplierName)
+		}
+		entry := grouped[key]
+		if entry == nil {
+			entry = &WerkaStatusBreakdownEntry{
+				SupplierRef:  record.SupplierRef,
+				SupplierName: record.SupplierName,
+				UOM:          record.UOM,
+			}
+			grouped[key] = entry
+		}
+		entry.ReceiptCount++
+		entry.TotalSentQty += record.SentQty
+		entry.TotalAcceptedQty += record.AcceptedQty
+		entry.TotalReturnedQty += maxFloat(record.SentQty-record.AcceptedQty, 0)
+		if entry.UOM == "" {
+			entry.UOM = record.UOM
+		}
+	}
+
+	result := make([]WerkaStatusBreakdownEntry, 0, len(grouped))
+	for _, entry := range grouped {
+		result = append(result, *entry)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ReceiptCount != result[j].ReceiptCount {
+			return result[i].ReceiptCount > result[j].ReceiptCount
+		}
+		return strings.ToLower(result[i].SupplierName) < strings.ToLower(result[j].SupplierName)
+	})
+	return result, nil
 }
 
 func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]DispatchRecord, error) {
@@ -508,6 +561,26 @@ func dispatchRecordNeedsCommentScan(record DispatchRecord) bool {
 		return true
 	}
 	return strings.TrimSpace(record.Note) != ""
+}
+
+func recordMatchesWerkaBreakdown(record DispatchRecord, kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case "pending":
+		return record.Status == "pending" || record.Status == "draft"
+	case "confirmed":
+		return record.Status == "accepted"
+	case "returned":
+		return record.Status == "partial" || record.Status == "rejected" || record.Status == "cancelled"
+	default:
+		return false
+	}
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (a *ERPAuthenticator) NotificationDetail(ctx context.Context, principal Principal, receiptID string) (NotificationDetail, error) {

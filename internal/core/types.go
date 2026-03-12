@@ -79,6 +79,17 @@ type SupplierHomeSummary struct {
 type WerkaHomeSummary struct {
 	PendingCount   int `json:"pending_count"`
 	ConfirmedCount int `json:"confirmed_count"`
+	ReturnedCount  int `json:"returned_count"`
+}
+
+type WerkaStatusBreakdownEntry struct {
+	SupplierRef      string  `json:"supplier_ref"`
+	SupplierName     string  `json:"supplier_name"`
+	ReceiptCount     int     `json:"receipt_count"`
+	TotalSentQty     float64 `json:"total_sent_qty"`
+	TotalAcceptedQty float64 `json:"total_accepted_qty"`
+	TotalReturnedQty float64 `json:"total_returned_qty"`
+	UOM              string  `json:"uom"`
 }
 
 type CreateDispatchRequest struct {

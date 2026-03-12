@@ -46,6 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/supplier/items", s.handleSupplierItems)
 	mux.HandleFunc("/v1/mobile/supplier/dispatch", s.handleCreateDispatch)
 	mux.HandleFunc("/v1/mobile/werka/summary", s.handleWerkaSummary)
+	mux.HandleFunc("/v1/mobile/werka/status-breakdown", s.handleWerkaStatusBreakdown)
 	mux.HandleFunc("/v1/mobile/werka/pending", s.handleWerkaPending)
 	mux.HandleFunc("/v1/mobile/werka/history", s.handleWerkaHistory)
 	mux.HandleFunc("/v1/mobile/werka/confirm", s.handleWerkaConfirm)
@@ -563,6 +564,25 @@ func (s *Server) handleWerkaSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *Server) handleWerkaStatusBreakdown(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if err := requireRole(principal, RoleWerka); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+	items, err := s.auth.WerkaStatusBreakdown(r.Context(), kind)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "werka status breakdown failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (s *Server) handleWerkaHistory(w http.ResponseWriter, r *http.Request) {

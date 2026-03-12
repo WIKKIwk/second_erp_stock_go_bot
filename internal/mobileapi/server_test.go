@@ -784,6 +784,85 @@ func TestServerWerkaPendingIncludesDraftReceipts(t *testing.T) {
 	}
 }
 
+func TestServerWerkaSummarySeparatesReturnedFromConfirmed(t *testing.T) {
+	fakeERP := &fakeERPClient{
+		telegramReceipts: []erpnext.PurchaseReceiptDraft{
+			{
+				Name:                 "MAT-PRE-0001",
+				Supplier:             "SUP-001",
+				SupplierName:         "Abdulloh",
+				SupplierDeliveryNote: "TG:+998900000000|2",
+				ItemCode:             "ITEM-001",
+				ItemName:             "Rice",
+				Qty:                  2,
+				UOM:                  "Kg",
+				PostingDate:          "2026-03-11",
+				Status:               "Draft",
+				DocStatus:            0,
+			},
+			{
+				Name:                 "MAT-PRE-0002",
+				Supplier:             "SUP-001",
+				SupplierName:         "Abdulloh",
+				SupplierDeliveryNote: "TG:+998900000000|3",
+				ItemCode:             "ITEM-001",
+				ItemName:             "Rice",
+				Qty:                  3,
+				UOM:                  "Kg",
+				PostingDate:          "2026-03-11",
+				DocStatus:            1,
+			},
+			{
+				Name:                 "MAT-PRE-0003",
+				Supplier:             "SUP-001",
+				SupplierName:         "Abdulloh",
+				SupplierDeliveryNote: "TG:+998900000000:20260311120000:4.0000",
+				ItemCode:             "ITEM-001",
+				ItemName:             "Rice",
+				Qty:                  1,
+				UOM:                  "Kg",
+				PostingDate:          "2026-03-11",
+				Remarks:              "Accord Qabul: 1.0000 Kg\nAccord Qaytarildi: 3.0000 Kg",
+				DocStatus:            1,
+			},
+		},
+	}
+	server := NewServer(NewERPAuthenticator(
+		fakeERP,
+		"http://localhost:8000",
+		"key",
+		"secret",
+		"Stores - CH",
+		"10",
+		"20",
+		"20WERKA0001",
+		"+998901111111",
+		"Werka",
+		nil,
+		nil,
+	))
+	token, err := server.sessions.Create(Principal{Role: RoleWerka, DisplayName: "Werka"})
+	if err != nil {
+		t.Fatalf("failed to create werka session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/mobile/werka/summary", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected werka summary status: %d", resp.Code)
+	}
+
+	var summary WerkaHomeSummary
+	if err := json.NewDecoder(resp.Body).Decode(&summary); err != nil {
+		t.Fatalf("failed to decode werka summary: %v", err)
+	}
+	if summary.PendingCount != 1 || summary.ConfirmedCount != 1 || summary.ReturnedCount != 1 {
+		t.Fatalf("unexpected werka summary: %+v", summary)
+	}
+}
+
 func TestServerSupplierHistorySkipsCommentBatchForCleanRecords(t *testing.T) {
 	fakeERP := &fakeERPClient{
 		supplierReceipts: []erpnext.PurchaseReceiptDraft{
