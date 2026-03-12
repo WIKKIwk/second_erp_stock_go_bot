@@ -25,6 +25,7 @@ type fakeERPClient struct {
 	telegramReceipts  []erpnext.PurchaseReceiptDraft
 	batchCommentKeys  [][]string
 	updateRemarksErr  error
+	lastSupplierLimit int
 }
 
 func (f *fakeERPClient) SearchItems(_ context.Context, _, _, _, query string, limit int) ([]erpnext.Item, error) {
@@ -157,7 +158,8 @@ func (f *fakeERPClient) ListTelegramPurchaseReceipts(_ context.Context, _, _, _ 
 	}, nil
 }
 
-func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _, _ string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
+	f.lastSupplierLimit = limit
 	if f.supplierReceipts != nil {
 		return append([]erpnext.PurchaseReceiptDraft(nil), f.supplierReceipts...), nil
 	}
@@ -799,6 +801,9 @@ func TestServerSupplierHistorySkipsCommentBatchForCleanRecords(t *testing.T) {
 	}
 	if len(fakeERP.batchCommentKeys) != 0 {
 		t.Fatalf("expected no batch comment calls, got %+v", fakeERP.batchCommentKeys)
+	}
+	if fakeERP.lastSupplierLimit != 100 {
+		t.Fatalf("expected supplier history limit 100, got %d", fakeERP.lastSupplierLimit)
 	}
 }
 

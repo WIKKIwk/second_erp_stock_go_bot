@@ -444,7 +444,7 @@ func (s *Server) handleSupplierHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := s.auth.SupplierHistory(r.Context(), principal, 20)
+	items, err := s.auth.SupplierHistory(r.Context(), principal, 100)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "supplier history failed"})
 		return
