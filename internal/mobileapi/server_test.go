@@ -26,6 +26,9 @@ type fakeERPClient struct {
 	batchCommentKeys  [][]string
 	updateRemarksErr  error
 	lastSupplierLimit int
+	lastSupplierOffset int
+	lastTelegramLimit  int
+	lastTelegramOffset int
 }
 
 func (f *fakeERPClient) SearchItems(_ context.Context, _, _, _, query string, limit int) ([]erpnext.Item, error) {
@@ -134,17 +137,27 @@ func (f *fakeERPClient) UpdateSupplierContact(_ context.Context, _, _, _, id, ph
 }
 
 func (f *fakeERPClient) ListPendingPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return f.ListPendingPurchaseReceiptsPage(context.Background(), "", "", "", 0, 0)
+}
+
+func (f *fakeERPClient) ListPendingPurchaseReceiptsPage(_ context.Context, _, _, _ string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error) {
 	if f.pendingReceipts != nil {
-		return append([]erpnext.PurchaseReceiptDraft(nil), f.pendingReceipts...), nil
+		return sliceReceiptPage(f.pendingReceipts, limit, offset), nil
 	}
 	return nil, nil
 }
 
 func (f *fakeERPClient) ListTelegramPurchaseReceipts(_ context.Context, _, _, _ string, _ int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return f.ListTelegramPurchaseReceiptsPage(context.Background(), "", "", "", 0, 0)
+}
+
+func (f *fakeERPClient) ListTelegramPurchaseReceiptsPage(_ context.Context, _, _, _ string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error) {
+	f.lastTelegramLimit = limit
+	f.lastTelegramOffset = offset
 	if f.telegramReceipts != nil {
-		return append([]erpnext.PurchaseReceiptDraft(nil), f.telegramReceipts...), nil
+		return sliceReceiptPage(f.telegramReceipts, limit, offset), nil
 	}
-	return []erpnext.PurchaseReceiptDraft{
+	return sliceReceiptPage([]erpnext.PurchaseReceiptDraft{
 		{
 			Name:                 "MAT-PRE-0001",
 			SupplierName:         "Abdulloh",
@@ -155,15 +168,20 @@ func (f *fakeERPClient) ListTelegramPurchaseReceipts(_ context.Context, _, _, _ 
 			UOM:                  "Kg",
 			PostingDate:          "2026-03-10",
 		},
-	}, nil
+	}, limit, offset), nil
 }
 
-func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _, _ string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
+func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return f.ListSupplierPurchaseReceiptsPage(context.Background(), "", "", "", supplier, limit, 0)
+}
+
+func (f *fakeERPClient) ListSupplierPurchaseReceiptsPage(_ context.Context, _, _, _, _ string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error) {
 	f.lastSupplierLimit = limit
+	f.lastSupplierOffset = offset
 	if f.supplierReceipts != nil {
-		return append([]erpnext.PurchaseReceiptDraft(nil), f.supplierReceipts...), nil
+		return sliceReceiptPage(f.supplierReceipts, limit, offset), nil
 	}
-	return []erpnext.PurchaseReceiptDraft{
+	return sliceReceiptPage([]erpnext.PurchaseReceiptDraft{
 		{
 			Name:                 "MAT-PRE-0001",
 			Supplier:             "SUP-001",
@@ -175,7 +193,7 @@ func (f *fakeERPClient) ListSupplierPurchaseReceipts(_ context.Context, _, _, _,
 			UOM:                  "Kg",
 			PostingDate:          "2026-03-10",
 		},
-	}, nil
+	}, limit, offset), nil
 }
 
 func (f *fakeERPClient) GetPurchaseReceipt(_ context.Context, _, _, _, name string) (erpnext.PurchaseReceiptDraft, error) {
@@ -265,6 +283,19 @@ func filterFakeItems(items []erpnext.Item, query string, limit int) []erpnext.It
 		}
 	}
 	return result
+}
+
+func sliceReceiptPage(items []erpnext.PurchaseReceiptDraft, limit, offset int) []erpnext.PurchaseReceiptDraft {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(items) {
+		return []erpnext.PurchaseReceiptDraft{}
+	}
+	if limit <= 0 || offset+limit > len(items) {
+		limit = len(items) - offset
+	}
+	return append([]erpnext.PurchaseReceiptDraft(nil), items[offset:offset+limit]...)
 }
 
 func TestServerLoginAndMeFlow(t *testing.T) {

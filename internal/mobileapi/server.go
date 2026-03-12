@@ -41,9 +41,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mobile/push/token", s.handlePushToken)
 	mux.HandleFunc("/v1/mobile/notifications/detail", s.handleNotificationDetail)
 	mux.HandleFunc("/v1/mobile/notifications/comments", s.handleNotificationComment)
+	mux.HandleFunc("/v1/mobile/supplier/summary", s.handleSupplierSummary)
 	mux.HandleFunc("/v1/mobile/supplier/history", s.handleSupplierHistory)
 	mux.HandleFunc("/v1/mobile/supplier/items", s.handleSupplierItems)
 	mux.HandleFunc("/v1/mobile/supplier/dispatch", s.handleCreateDispatch)
+	mux.HandleFunc("/v1/mobile/werka/summary", s.handleWerkaSummary)
 	mux.HandleFunc("/v1/mobile/werka/pending", s.handleWerkaPending)
 	mux.HandleFunc("/v1/mobile/werka/history", s.handleWerkaHistory)
 	mux.HandleFunc("/v1/mobile/werka/confirm", s.handleWerkaConfirm)
@@ -452,6 +454,24 @@ func (s *Server) handleSupplierHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+func (s *Server) handleSupplierSummary(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if err := requireRole(principal, RoleSupplier); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	summary, err := s.auth.SupplierSummary(r.Context(), principal)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "supplier summary failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
 func (s *Server) handleSupplierItems(w http.ResponseWriter, r *http.Request) {
 	principal, ok := s.authorize(w, r)
 	if !ok {
@@ -525,6 +545,24 @@ func (s *Server) handleWerkaPending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) handleWerkaSummary(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.authorize(w, r)
+	if !ok {
+		return
+	}
+	if err := requireRole(principal, RoleWerka); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	summary, err := s.auth.WerkaSummary(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "werka summary failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
 
 func (s *Server) handleWerkaHistory(w http.ResponseWriter, r *http.Request) {

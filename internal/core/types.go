@@ -70,6 +70,17 @@ type SupplierItem struct {
 	Warehouse string `json:"warehouse"`
 }
 
+type SupplierHomeSummary struct {
+	PendingCount   int `json:"pending_count"`
+	SubmittedCount int `json:"submitted_count"`
+	ReturnedCount  int `json:"returned_count"`
+}
+
+type WerkaHomeSummary struct {
+	PendingCount   int `json:"pending_count"`
+	ConfirmedCount int `json:"confirmed_count"`
+}
+
 type CreateDispatchRequest struct {
 	ItemCode string  `json:"item_code"`
 	Qty      float64 `json:"qty"`

@@ -42,8 +42,11 @@ type ERPClient interface {
 	AssignSupplierToItem(ctx context.Context, baseURL, apiKey, apiSecret, itemCode, supplier string) error
 	RemoveSupplierFromItem(ctx context.Context, baseURL, apiKey, apiSecret, itemCode, supplier string) error
 	ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
+	ListPendingPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error)
 	ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
+	ListTelegramPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error)
 	ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error)
+	ListSupplierPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error)
 	GetPurchaseReceipt(ctx context.Context, baseURL, apiKey, apiSecret, name string) (erpnext.PurchaseReceiptDraft, error)
 	ListPurchaseReceiptComments(ctx context.Context, baseURL, apiKey, apiSecret, name string, limit int) ([]erpnext.Comment, error)
 	ListPurchaseReceiptCommentsBatch(ctx context.Context, baseURL, apiKey, apiSecret string, names []string, limit int) (map[string][]erpnext.Comment, error)
@@ -337,6 +340,27 @@ func (a *ERPAuthenticator) SupplierHistory(ctx context.Context, principal Princi
 	return result, nil
 }
 
+func (a *ERPAuthenticator) SupplierSummary(ctx context.Context, principal Principal) (SupplierHomeSummary, error) {
+	items, err := a.collectSupplierPurchaseReceipts(ctx, principal.Ref)
+	if err != nil {
+		return SupplierHomeSummary{}, err
+	}
+
+	var summary SupplierHomeSummary
+	for _, item := range items {
+		record := mapPurchaseReceiptToDispatchRecord(item, principal.DisplayName)
+		switch record.Status {
+		case "pending", "draft":
+			summary.PendingCount++
+		case "accepted":
+			summary.SubmittedCount++
+		case "partial", "rejected", "cancelled":
+			summary.ReturnedCount++
+		}
+	}
+	return summary, nil
+}
+
 func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]DispatchRecord, error) {
 	items, err := a.erp.ListPendingPurchaseReceipts(ctx, a.baseURL, a.apiKey, a.apiSecret, limit)
 	if err != nil {
@@ -352,6 +376,28 @@ func (a *ERPAuthenticator) WerkaPending(ctx context.Context, limit int) ([]Dispa
 		result = append(result, record)
 	}
 	return result, nil
+}
+
+func (a *ERPAuthenticator) WerkaSummary(ctx context.Context) (WerkaHomeSummary, error) {
+	items, err := a.collectTelegramPurchaseReceipts(ctx)
+	if err != nil {
+		return WerkaHomeSummary{}, err
+	}
+
+	var summary WerkaHomeSummary
+	for _, item := range items {
+		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
+		if record.EventType != "" {
+			continue
+		}
+		switch record.Status {
+		case "pending", "draft":
+			summary.PendingCount++
+		case "accepted", "partial":
+			summary.ConfirmedCount++
+		}
+	}
+	return summary, nil
 }
 
 func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]DispatchRecord, error) {
@@ -424,6 +470,36 @@ func (a *ERPAuthenticator) purchaseReceiptCommentsByName(ctx context.Context, it
 	}
 
 	return a.erp.ListPurchaseReceiptCommentsBatch(ctx, a.baseURL, a.apiKey, a.apiSecret, names, limit)
+}
+
+func (a *ERPAuthenticator) collectSupplierPurchaseReceipts(ctx context.Context, supplierRef string) ([]erpnext.PurchaseReceiptDraft, error) {
+	const pageSize = 200
+	result := make([]erpnext.PurchaseReceiptDraft, 0, pageSize)
+	for offset := 0; ; offset += pageSize {
+		items, err := a.erp.ListSupplierPurchaseReceiptsPage(ctx, a.baseURL, a.apiKey, a.apiSecret, supplierRef, pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, items...)
+		if len(items) < pageSize {
+			return result, nil
+		}
+	}
+}
+
+func (a *ERPAuthenticator) collectTelegramPurchaseReceipts(ctx context.Context) ([]erpnext.PurchaseReceiptDraft, error) {
+	const pageSize = 200
+	result := make([]erpnext.PurchaseReceiptDraft, 0, pageSize)
+	for offset := 0; ; offset += pageSize {
+		items, err := a.erp.ListTelegramPurchaseReceiptsPage(ctx, a.baseURL, a.apiKey, a.apiSecret, pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, items...)
+		if len(items) < pageSize {
+			return result, nil
+		}
+	}
 }
 
 func dispatchRecordNeedsCommentScan(record DispatchRecord) bool {

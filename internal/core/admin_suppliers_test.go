@@ -92,11 +92,23 @@ func (s *adminSuppliersERPStub) ListPendingPurchaseReceipts(ctx context.Context,
 	return nil, nil
 }
 
+func (s *adminSuppliersERPStub) ListPendingPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return nil, nil
+}
+
 func (s *adminSuppliersERPStub) ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
 	return nil, nil
 }
 
+func (s *adminSuppliersERPStub) ListTelegramPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return nil, nil
+}
+
 func (s *adminSuppliersERPStub) ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]erpnext.PurchaseReceiptDraft, error) {
+	return nil, nil
+}
+
+func (s *adminSuppliersERPStub) ListSupplierPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit, offset int) ([]erpnext.PurchaseReceiptDraft, error) {
 	return nil, nil
 }
 

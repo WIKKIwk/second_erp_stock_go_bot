@@ -260,56 +260,71 @@ func (c *Client) CreateDraftPurchaseReceipt(ctx context.Context, baseURL, apiKey
 }
 
 func (c *Client) ListPendingPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]PurchaseReceiptDraft, error) {
+	return c.ListPendingPurchaseReceiptsPage(ctx, baseURL, apiKey, apiSecret, limit, 0)
+}
+
+func (c *Client) ListPendingPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret string, limit, offset int) ([]PurchaseReceiptDraft, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 50 {
-		limit = 10
+	if limit <= 0 || limit > 500 {
+		limit = 100
 	}
 
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"docstatus", "=", 0},
 	})
-	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit)
+	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit, offset)
 }
 
 func (c *Client) ListSupplierPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit int) ([]PurchaseReceiptDraft, error) {
+	return c.ListSupplierPurchaseReceiptsPage(ctx, baseURL, apiKey, apiSecret, supplier, limit, 0)
+}
+
+func (c *Client) ListSupplierPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret, supplier string, limit, offset int) ([]PurchaseReceiptDraft, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if limit <= 0 || limit > 500 {
+		limit = 100
 	}
 
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"supplier", "=", strings.TrimSpace(supplier)},
 		{"supplier_delivery_note", "like", telegramReceiptMarkerPrefix + "%"},
 	})
-	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit)
+	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit, offset)
 }
 
 func (c *Client) ListTelegramPurchaseReceipts(ctx context.Context, baseURL, apiKey, apiSecret string, limit int) ([]PurchaseReceiptDraft, error) {
+	return c.ListTelegramPurchaseReceiptsPage(ctx, baseURL, apiKey, apiSecret, limit, 0)
+}
+
+func (c *Client) ListTelegramPurchaseReceiptsPage(ctx context.Context, baseURL, apiKey, apiSecret string, limit, offset int) ([]PurchaseReceiptDraft, error) {
 	normalized, err := normalizeBaseURL(baseURL)
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if limit <= 0 || limit > 500 {
+		limit = 100
 	}
 
 	filtersJSON, _ := json.Marshal([][]interface{}{
 		{"supplier_delivery_note", "like", telegramReceiptMarkerPrefix + "%"},
 	})
-	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit)
+	return c.listPurchaseReceipts(ctx, normalized, apiKey, apiSecret, filtersJSON, limit, offset)
 }
 
-func (c *Client) listPurchaseReceipts(ctx context.Context, normalized, apiKey, apiSecret string, filtersJSON []byte, limit int) ([]PurchaseReceiptDraft, error) {
+func (c *Client) listPurchaseReceipts(ctx context.Context, normalized, apiKey, apiSecret string, filtersJSON []byte, limit, offset int) ([]PurchaseReceiptDraft, error) {
 	params := url.Values{}
 	params.Set("fields", `["name","supplier","supplier_name","posting_date","supplier_delivery_note","status","docstatus","currency","remarks","items"]`)
 	params.Set("filters", string(filtersJSON))
 	params.Set("limit_page_length", fmt.Sprintf("%d", limit))
+	if offset > 0 {
+		params.Set("limit_start", fmt.Sprintf("%d", offset))
+	}
 	params.Set("order_by", "modified desc")
 
 	var payload struct {
