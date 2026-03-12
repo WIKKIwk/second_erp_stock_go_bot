@@ -453,6 +453,30 @@ func (a *ERPAuthenticator) WerkaStatusBreakdown(ctx context.Context, kind string
 	return result, nil
 }
 
+func (a *ERPAuthenticator) WerkaStatusDetails(ctx context.Context, kind, supplierRef string) ([]DispatchRecord, error) {
+	items, err := a.collectTelegramPurchaseReceipts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	needle := strings.TrimSpace(supplierRef)
+	result := make([]DispatchRecord, 0, len(items))
+	for _, item := range items {
+		record := mapPurchaseReceiptToDispatchRecord(item, item.SupplierName)
+		if record.EventType != "" {
+			continue
+		}
+		if needle != "" && !strings.EqualFold(strings.TrimSpace(record.SupplierRef), needle) {
+			continue
+		}
+		if !recordMatchesWerkaBreakdown(record, kind) {
+			continue
+		}
+		result = append(result, record)
+	}
+	return result, nil
+}
+
 func (a *ERPAuthenticator) WerkaHistory(ctx context.Context, limit int) ([]DispatchRecord, error) {
 	items, err := a.erp.ListTelegramPurchaseReceipts(ctx, a.baseURL, a.apiKey, a.apiSecret, limit)
 	if err != nil {
