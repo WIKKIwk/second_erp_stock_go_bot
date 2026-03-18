@@ -1,61 +1,12 @@
-APP := ./cmd/bot
 CORE_APP := ./cmd/core
-BIN_DIR := ./bin
-BIN := $(BIN_DIR)/erpnext-bot
-BOT_PID_FILE := .bot.pid
-BOT_LOG_FILE := .bot.log
 CORE_ADDR ?= http://127.0.0.1:8081
 CORE_PID_FILE := .core.pid
 CORE_LOG_FILE := .core.log
 CORE_REV_FILE := .core.rev
 
-.PHONY: run run-all run-bot run-core stop build test tidy fmt local-erp-env local-erp-check run-local-erp run-mobile-api core-up core-stop core-restart
+.PHONY: run run-core stop test tidy fmt local-erp-env local-erp-check run-local-erp run-mobile-api core-up core-stop core-restart
 
-token_from_env = $$( [ -f .env ] && sed -n 's/^TELEGRAM_BOT_TOKEN=//p' .env | head -n1 )
-
-build:
-	@mkdir -p $(BIN_DIR)
-	@go build -o $(BIN) $(APP)
-
-stop:
-	@token="$(token_from_env)"; \
-	token="$${token#\"}"; \
-	token="$${token%\"}"; \
-	token="$${token#\'}"; \
-	token="$${token%\'}"; \
-	pids_file=""; \
-	if [ -f "$(BOT_PID_FILE)" ]; then \
-		pids_file="$$(cat "$(BOT_PID_FILE)" 2>/dev/null || true)"; \
-	fi; \
-	pids_bin=$$(pgrep -x -f "$(CURDIR)/bin/erpnext-bot" || true); \
-	pids_go=$$(pgrep -x -f "go run ./cmd/bot" || true); \
-	pids_token=""; \
-	if [ -n "$$token" ]; then \
-		for pid in $$(pgrep -u "$$(id -u)" || true); do \
-			[ "$$pid" = "$$" ] && continue; \
-			[ "$$pid" = "$$PPID" ] && continue; \
-			env_file="/proc/$$pid/environ"; \
-			[ -r "$$env_file" ] || continue; \
-			if grep -zqx "TELEGRAM_BOT_TOKEN=$$token" "$$env_file" 2>/dev/null; then \
-				pids_token="$$pids_token $$pid"; \
-			fi; \
-		done; \
-	fi; \
-	pids=$$(printf "%s\n%s\n%s\n%s\n" "$$pids_file" "$$pids_bin" "$$pids_go" "$$pids_token" | tr ' ' '\n' | awk 'NF' | sort -u | paste -sd' ' -); \
-	if [ -n "$$pids" ]; then \
-		echo "Stopping existing bot process(es): $$pids"; \
-		kill $$pids 2>/dev/null || true; \
-		sleep 1; \
-		alive=$$(for pid in $$pids; do kill -0 $$pid 2>/dev/null && echo $$pid; done); \
-		if [ -n "$$alive" ]; then \
-			echo "Force killing process(es): $$alive"; \
-			kill -9 $$alive 2>/dev/null || true; \
-		fi; \
-	else \
-		echo "No existing local bot process found"; \
-	fi; \
-	rm -f "$(BOT_PID_FILE)"
-	@$(MAKE) core-stop
+stop: core-stop
 
 core-up:
 	@current_rev="$$(git rev-parse HEAD 2>/dev/null || echo unknown)"; \
@@ -110,31 +61,7 @@ core-stop:
 
 core-restart: core-stop core-up
 
-run: run-all
-
-run-all: stop build core-up
-	@token="$(token_from_env)"; \
-	token="$${token#\"}"; \
-	token="$${token%\"}"; \
-	token="$${token#\'}"; \
-	token="$${token%\'}"; \
-	if [ -n "$$token" ]; then export TELEGRAM_BOT_TOKEN="$$token"; fi; \
-	echo "Starting bot from $(BIN)"; \
-	"$(BIN)" & \
-	bot_pid=$$!; \
-	echo "$$bot_pid" >"$(BOT_PID_FILE)"; \
-	trap 'kill "$$bot_pid" 2>/dev/null || true; rm -f "$(BOT_PID_FILE)"' INT TERM EXIT; \
-	wait "$$bot_pid"
-
-run-bot: stop build
-	@token="$(token_from_env)"; \
-	token="$${token#\"}"; \
-	token="$${token%\"}"; \
-	token="$${token#\'}"; \
-	token="$${token%\'}"; \
-	if [ -n "$$token" ]; then export TELEGRAM_BOT_TOKEN="$$token"; fi; \
-	echo "Starting bot from $(BIN)"; \
-	exec "$(BIN)"
+run: run-core
 
 run-core: core-stop
 	@MOBILE_API_ADDR=":8081" go run $(CORE_APP)
