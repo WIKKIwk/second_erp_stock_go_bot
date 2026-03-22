@@ -1,5 +1,9 @@
 # AGENTS.md
 
+附加说明：
+- 用户个人工作规则已单独写入 `/home/wikki/storage/local.git/erpnext_stock_telegram/USER_RULES.md`
+- 下一位代理开始工作前，必须先读这个文件
+
 本文件只保留“下一位代理继续开发时真正需要知道”的当前上下文，不记录无关历史。
 
 ## 1. 当前主仓库
@@ -221,3 +225,90 @@ make apk-domain APK_NAME=accord.apk
 - ERP 字段已经是状态真相来源，comment 不能再作为业务真相
 - mobile_app 已开始单角色 store 化，且最新会话恢复 / logout 硬重置已完成
 - 下一阶段主要是“真机 hard test + 按结果继续收口”，不是再回去补旧架构
+
+## 11. 给下一位代理的硬规则
+
+这部分不是建议，是硬规则。下一位代理如果再犯这些错，就等于没在按任务工作。
+
+### 先读什么
+- 先读本文件
+- 再读：
+  - `/home/wikki/storage/local.git/erpnext_stock_telegram/USER_CHARACTER.md`
+- 原来写在这里的 `/home/wikki/storage/local.git/erpnext_stock_telegram/USER_RULES.md` 当前实际不存在
+- 如果该路径还是不存在，不要假装已经读过；直接以 `USER_CHARACTER.md` + 本节规则继续工作
+
+### 用户真实工作方式
+- 用户说“查 / 研究 / 看看 / look / izlan”时：
+  - 先研究
+  - 先给 source + 结论
+  - **不要先改代码**
+- 用户说“修 / patch / qil”时：
+  - 直接动手
+  - 但只能做和用户要求完全一致的事
+
+### 最重要的禁止项
+- 不要自作主张做 product 决策
+- 不要把“detail 里有 bug”理解成“detail 里不要 dock”
+- 不要把“看起来不对”理解成“直接隐藏功能”
+- 不要为了省事改成另一个产品行为
+- 不要把“写了代码”说成“patch 完成”
+- 没有用户实际要的结果，就不要说“做了 / patched / fixed”
+
+### 对“patch”的定义
+- 对这个用户来说，patch 不是：
+  - 改了文件
+  - 提交了 commit
+  - analyze 绿了
+  - test 绿了
+- 对这个用户来说，patch 只能是：
+  - 用户要的结果真实出现了
+  - 或者至少你有足够强的 runtime 证据说明结果已经出现
+
+### 对“研究”的定义
+- 研究不是闲聊
+- 研究必须给出：
+  - 官方 source
+  - 你从 source 得出的单句结论
+  - 这对当前项目意味着什么
+- 如果用户还没让你写代码，就停在这里，不要继续“顺手 patch”
+
+### 当前 iOS dock / Liquid Glass 特别规则
+- 当前最敏感的问题是 `mobile_app` 里的 iOS dock
+- 下一位代理必须牢记：
+  - 用户要的是 **original / maximum-close Liquid Glass result**
+  - 不是 blur
+  - 不是 fake glass
+  - 不是“差不多”
+- 只要结果还是：
+  - 位置不对
+  - 太小
+  - touch 不对
+  - duplicate
+  - detail 里异常
+  就不能说完成
+
+### 对 dock 的绝对限制
+- 不准再因为 detail page 出问题就去掉 detail 里的 dock
+- 不准再因为 touch 有问题就隐藏 dock
+- 不准再因为 route transition 奇怪就说“detail 不该有 dock”
+- 这些都属于错误方向
+
+### 什么时候可以说“做完了”
+- 只有在下面四个条件同时成立时才可以：
+  - 用户要的行为已经出现
+  - 没有明显回归
+  - analyze/test 通过
+  - 你自己没有在话术里留后门
+
+### 说话方式
+- 只说事实
+- 少说废话
+- 不要自我辩护
+- 不要“接近了 / 基本上 / 差不多 / 方向对了”
+- 结果没出来时，只能说：
+  - 还没好
+  - root cause 是什么
+  - 下一步做什么
+
+### 最后的单句提醒
+- 如果下一位代理又开始“自己脑补产品行为”，那就不是在开发，是在捣乱。
